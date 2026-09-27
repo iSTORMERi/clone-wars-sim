@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Clone Wars Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+        canvas {
+            display: block;
+            background: linear-gradient(180deg, #0a0a2e 0%, #000 100%);
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 14px;
+            text-shadow: 0 0 5px #000;
+        }
+        #message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 28px;
+            font-weight: bold;
+            text-align: center;
+            display: none;
+            text-shadow: 0 0 15px currentColor;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game"></canvas>
+    <div id="ui">
+        <div>🔵 Республика: <span id="republic">0</span></div>
+        <div>🔴 КНС: <span id="cis">0</span></div>
+    </div>
+    <div id="message"></div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // Юниты и пули
+        let units = [];
+        let bullets = [];
+
+        // Создаем армии
+        function createArmy(side, count) {
+            for (let i = 0; i < count; i++) {
+                units.push({
+                    side: side,
+                    x: side === 'republic' ? Math.random() * 100 + 20 : canvas.width - Math.random() * 100 - 20,
+                    y: Math.random() * (canvas.height - 40) + 20,
+                    hp: 1,
+                    speed: 0.5 + Math.random() * 0.3,
+                    cooldown: Math.random() * 60
+                });
+            }
+        }
+
+        createArmy('republic', 20);
+        createArmy('cis', 20);
+
+        // Звезды на фоне
+        const stars = [];
+        for (let i = 0; i < 100; i++) {
+            stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 1.5
+            });
+        }
+
+        function drawStars() {
+            ctx.fillStyle = 'white';
+            stars.forEach(s => {
+                ctx.globalAlpha = 0.5 + Math.random() * 0.5;
+                ctx.fillRect(s.x, s.y, s.size, s.size);
+            });
+            ctx.globalAlpha = 1;
+        }
+
+        function findEnemy(unit) {
+            let closest = null;
+            let minDist = Infinity;
+            units.forEach(u => {
+                if (u.side !== unit.side && u.hp > 0) {
+                    const d = Math.hypot(u.x - unit.x, u.y - unit.y);
+                    if (d < minDist) {
+                        minDist = d;
+                        closest = u;
+                    }
+                }
+            });
+            return { enemy: closest, dist: minDist };
+        }
+
+        function update() {
+            units.forEach(unit => {
+                if (unit.hp <= 0) return;
+
+                const { enemy, dist } = findEnemy(unit);
+                if (!enemy) return;
+
+                // Двигаемся к врагу
+                if (dist > 150) {
+                    const dx = enemy.x - unit.x;
+                    const dy = enemy.y - unit.y;
+                    const len = Math.hypot(dx, dy);
+                    unit.x += (dx / len) * unit.speed;
+                    unit.y += (dy / len) * unit.speed;
+                }
+
+                // Стреляем
+                unit.cooldown--;
+                if (unit.cooldown <= 0 && dist < 300) {
+                    const dx = enemy.x - unit.x;
+                    const dy = enemy.y - unit.y;
+                    const len = Math.hypot(dx, dy);
+                    bullets.push({
+                        x: unit.x,
+                        y: unit.y,
+                        vx: (dx / len) * 5,
+                        vy: (dy / len) * 5,
+                        side: unit.side,
+                        life: 100
+                    });
+                    unit.cooldown = 40 + Math.random() * 40;
+                }
+            });
+
+            // Обновляем пули
+            bullets.forEach(b => {
+                b.x += b.vx;
+                b.y += b.vy;
+                b.life--;
+
+                // Проверяем попадания
+                units.forEach(u => {
+                    if (u.side !== b.side && u.hp > 0) {
+                        if (Math.hypot(u.x - b.x, u.y - b.y) < 8) {
+                            u.hp = 0;
+                            b.life = 0;
+                        }
+                    }
+                });
+            });
+
+            // Удаляем мертвых и старые пули
+            units = units.filter(u => u.hp > 0);
+            bullets = bullets.filter(b => b.life > 0 && b.x > 0 && b.x < canvas.width && b.y > 0 && b.y < canvas.height);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawStars();
+
+            // Рисуем юнитов
+            units.forEach(u => {
+                if (u.side === 'republic') {
+                    ctx.fillStyle = '#4a9eff';
+                    ctx.strokeStyle = 'white';
+                } else {
+                    ctx.fillStyle = '#ff3030';
+                    ctx.strokeStyle = '#ff8800';
+                }
+                ctx.beginPath();
+                ctx.arc(u.x, u.y, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            });
+
+            // Рисуем пули (лазеры)
+            bullets.forEach(b => {
+                ctx.fillStyle = b.side === 'republic' ? '#4a9eff' : '#ff3030';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = ctx.fillStyle;
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            });
+        }
+
+        function checkWin() {
+            const rep = units.filter(u => u.side === 'republic').length;
+            const cis = units.filter(u => u.side === 'cis
