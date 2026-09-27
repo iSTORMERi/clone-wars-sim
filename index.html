@@ -8,7 +8,7 @@
         body {
             margin: 0;
             padding: 0;
-            background: #050a14; /* Темный фон подложки */
+            background: #050a14; /* Темный фон "щелей" */
             overflow: hidden;
             touch-action: none;
         }
@@ -24,9 +24,9 @@
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
 
-        // Настройки сетки Камино
-        const TILE_SIZE = 120; // Размер одной плиты
-        const GAP_SIZE = 4;    // Ширина неоновой линии
+        // НАСТРОЙКИ СЕТКИ КАМИНО
+        const TILE_SIZE = 30;  // Размер одной маленькой плиты (было 120)
+        const GAP_SIZE = 2;    // Толщина неоновой линии (было 4)
 
         function resize() {
             canvas.width = window.innerWidth;
@@ -35,56 +35,48 @@
         }
 
         function drawMap() {
-            // Очищаем экран темным фоном (это будет цвет "щелей")
-            ctx.fillStyle = '#050a14';
+            // 1. Рисуем темный фон (это будут наши светящиеся линии)
+            ctx.fillStyle = '#050a14'; 
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Рисуем серые плиты
-            ctx.fillStyle = '#2a3b4c'; // Цвет платформ Камино
+            // 2. Рисуем серые плиты поверх фона
+            ctx.fillStyle = '#2a3b4c'; 
             
-            // Вычисляем количество плит по ширине и высоте
+            // Вычисляем сколько плит влезет на экран
             const cols = Math.ceil(canvas.width / (TILE_SIZE + GAP_SIZE));
             const rows = Math.ceil(canvas.height / (TILE_SIZE + GAP_SIZE));
 
             for (let i = 0; i < cols; i++) {
                 for (let j = 0; j < rows; j++) {
-                    const x = i * (TILE_SIZE + GAP_SIZE) + GAP_SIZE / 2;
-                    const y = j * (TILE_SIZE + GAP_SIZE) + GAP_SIZE / 2;
+                    const x = i * (TILE_SIZE + GAP_SIZE);
+                    const y = j * (TILE_SIZE + GAP_SIZE);
                     
-                    // Рисуем плиту
+                    // Рисуем каждую маленькую плиту
                     ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
                 }
             }
 
-            // Добавляем легкое свечение на стыках для эффекта неона
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = 'rgba(255, 255, 255, 0.3)';
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-            ctx.lineWidth = 1;
+            // 3. Добавляем легкое свечение для эффекта неона
+            // (рисуем полупрозрачные белые прямоугольники точно по линиям)
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
             
-            // Можно раскомментировать этот блок, если хочешь явные белые линии поверх щелей
-            /*
             for (let i = 0; i <= cols; i++) {
-                const x = i * (TILE_SIZE + GAP_SIZE);
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, canvas.height);
-                ctx.stroke();
+                const x = i * (TILE_SIZE + GAP_SIZE) - GAP_SIZE/2;
+                ctx.fillRect(x, 0, GAP_SIZE, canvas.height);
             }
             for (let j = 0; j <= rows; j++) {
-                const y = j * (TILE_SIZE + GAP_SIZE);
-                ctx.beginPath();
-                ctx.moveTo(0, y);
-                ctx.lineTo(canvas.width, y);
-                ctx.stroke();
+                const y = j * (TILE_SIZE + GAP_SIZE) - GAP_SIZE/2;
+                ctx.fillRect(0, y, canvas.width, GAP_SIZE);
             }
-            */
+            
             ctx.shadowBlur = 0; // Сброс эффектов
         }
 
-        // Инициализация
+        // Запуск при загрузке и изменении размера экрана
         window.addEventListener('resize', resize);
-        resize(); // Первый запуск отрисовки
+        resize(); 
 
     </script>
 </body>
