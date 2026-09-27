@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Clone Wars Simulation</title>
+    <title>Clone Wars Simulation - Geonosis</title>
     <style>
         body {
             margin: 0;
@@ -12,28 +12,51 @@
             overflow: hidden;
             font-family: Arial, sans-serif;
             color: white;
+            touch-action: none; /* Отключаем зум на iPhone */
         }
         canvas {
             display: block;
-            background: linear-gradient(180deg, #0a0a2e 0%, #000 100%);
+            background: #000; /* Резервный фон */
         }
         #ui {
             position: absolute;
             top: 10px;
             left: 10px;
-            font-size: 14px;
-            text-shadow: 0 0 5px #000;
+            font-size: 16px;
+            text-shadow: 0 0 5px #000, 0 0 10px #000;
+            pointer-events: none;
+            z-index: 10;
         }
         #message {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 28px;
+            font-size: 32px;
             font-weight: bold;
             text-align: center;
             display: none;
-            text-shadow: 0 0 15px currentColor;
+            text-shadow: 0 0 20px currentColor;
+            z-index: 20;
+            background: rgba(0,0,0,0.7);
+            padding: 20px;
+            border-radius: 10px;
+        }
+        #restartBtn {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            font-size: 18px;
+            background: #ffcc00;
+            color: #000;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            display: none;
+            z-index: 20;
+            box-shadow: 0 0 15px rgba(255,204,0,0.5);
         }
     </style>
 </head>
@@ -44,10 +67,19 @@
         <div>🔴 КНС: <span id="cis">0</span></div>
     </div>
     <div id="message"></div>
+    <button id="restartBtn">⚔️ НОВАЯ БИТВА</button>
 
     <script>
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
+        const restartBtn = document.getElementById('restartBtn');
+
+        // Загрузка карты Геонозиса
+        const mapImage = new Image();
+        mapImage.src = '2026-09-27_Original.png'; // ТВОЙ ФАЙЛ ЗДЕСЬ!
+        
+        let mapLoaded = false;
+        mapImage.onload = () => { mapLoaded = true; };
 
         function resize() {
             canvas.width = window.innerWidth;
@@ -56,50 +88,47 @@
         resize();
         window.addEventListener('resize', resize);
 
-        // Юниты и пули
+        // Игровые объекты
         let units = [];
         let bullets = [];
+        let particles = [];
+        let gameEnded = false;
 
-        // Создаем армии
+        // Создание армии
         function createArmy(side, count) {
             for (let i = 0; i < count; i++) {
                 units.push({
                     side: side,
-                    x: side === 'republic' ? Math.random() * 100 + 20 : canvas.width - Math.random() * 100 - 20,
-                    y: Math.random() * (canvas.height - 40) + 20,
-                    hp: 1,
-                    speed: 0.5 + Math.random() * 0.3,
-                    cooldown: Math.random() * 60
+                    x: side === 'republic' ? Math.random() * 150 + 50 : canvas.width - Math.random() * 150 - 50,
+                    y: Math.random() * (canvas.height - 100) + 50,
+                    hp: 3,
+                    maxHp: 3,
+                    speed: 0.8 + Math.random() * 0.5,
+                    cooldown: Math.random() * 60,
+                    radius: 8
                 });
             }
         }
 
-        createArmy('republic', 20);
-        createArmy('cis', 20);
-
-        // Звезды на фоне
-        const stars = [];
-        for (let i = 0; i < 100; i++) {
-            stars.push({
-                x: Math.random() * canvas.width,
-                y: Math.random() * canvas.height,
-                size: Math.random() * 1.5
-            });
+        // Частицы взрыва
+        function createExplosion(x, y, color) {
+            for (let i = 0; i < 8; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    life: 30 + Math.random() * 20,
+                    color: color,
+                    size: 2 + Math.random() * 3
+                });
+            }
         }
 
-        function drawStars() {
-            ctx.fillStyle = 'white';
-            stars.forEach(s => {
-                ctx.globalAlpha = 0.5 + Math.random() * 0.5;
-                ctx.fillRect(s.x, s.y, s.size, s.size);
-            });
-            ctx.globalAlpha = 1;
-        }
-
+        // Поиск ближайшего врага
         function findEnemy(unit) {
             let closest = null;
             let minDist = Infinity;
-            units.forEach(u => {
+            for (const u of units) {
                 if (u.side !== unit.side && u.hp > 0) {
                     const d = Math.hypot(u.x - unit.x, u.y - unit.y);
                     if (d < minDist) {
@@ -107,19 +136,22 @@
                         closest = u;
                     }
                 }
-            });
+            }
             return { enemy: closest, dist: minDist };
         }
 
         function update() {
-            units.forEach(unit => {
-                if (unit.hp <= 0) return;
+            if (gameEnded) return;
+
+            // Обновление юнитов
+            for (const unit of units) {
+                if (unit.hp <= 0) continue;
 
                 const { enemy, dist } = findEnemy(unit);
-                if (!enemy) return;
+                if (!enemy) continue;
 
-                // Двигаемся к врагу
-                if (dist > 150) {
+                // Движение к врагу
+                if (dist > 120) {
                     const dx = enemy.x - unit.x;
                     const dy = enemy.y - unit.y;
                     const len = Math.hypot(dx, dy);
@@ -127,78 +159,169 @@
                     unit.y += (dy / len) * unit.speed;
                 }
 
-                // Стреляем
+                // Стрельба
                 unit.cooldown--;
-                if (unit.cooldown <= 0 && dist < 300) {
+                if (unit.cooldown <= 0 && dist < 350) {
                     const dx = enemy.x - unit.x;
                     const dy = enemy.y - unit.y;
                     const len = Math.hypot(dx, dy);
                     bullets.push({
-                        x: unit.x,
-                        y: unit.y,
-                        vx: (dx / len) * 5,
-                        vy: (dy / len) * 5,
+                        x: unit.x, y: unit.y,
+                        vx: (dx / len) * 6,
+                        vy: (dy / len) * 6,
                         side: unit.side,
-                        life: 100
+                        life: 80
                     });
-                    unit.cooldown = 40 + Math.random() * 40;
+                    unit.cooldown = 30 + Math.random() * 30;
                 }
-            });
+            }
 
-            // Обновляем пули
-            bullets.forEach(b => {
+            // Обновление пуль
+            for (const b of bullets) {
                 b.x += b.vx;
                 b.y += b.vy;
                 b.life--;
 
-                // Проверяем попадания
-                units.forEach(u => {
+                // Попадания
+                for (const u of units) {
                     if (u.side !== b.side && u.hp > 0) {
-                        if (Math.hypot(u.x - b.x, u.y - b.y) < 8) {
-                            u.hp = 0;
+                        if (Math.hypot(u.x - b.x, u.y - b.y) < u.radius + 3) {
+                            u.hp--;
                             b.life = 0;
+                            createExplosion(b.x, b.y, b.side === 'republic' ? '#4a9eff' : '#ff3030');
+                            if (u.hp <= 0) {
+                                createExplosion(u.x, u.y, u.side === 'republic' ? '#4a9eff' : '#ff3030');
+                            }
+                            break;
                         }
                     }
-                });
-            });
+                }
+            }
 
-            // Удаляем мертвых и старые пули
+            // Обновление частиц
+            for (const p of particles) {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+                p.size *= 0.95;
+            }
+
+            // Очистка мертвых объектов
             units = units.filter(u => u.hp > 0);
-            bullets = bullets.filter(b => b.life > 0 && b.x > 0 && b.x < canvas.width && b.y > 0 && b.y < canvas.height);
+            bullets = bullets.filter(b => b.life > 0 && b.x > -50 && b.x < canvas.width + 50 && b.y > -50 && b.y < canvas.height + 50);
+            particles = particles.filter(p => p.life > 0);
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawStars();
 
-            // Рисуем юнитов
-            units.forEach(u => {
-                if (u.side === 'republic') {
-                    ctx.fillStyle = '#4a9eff';
-                    ctx.strokeStyle = 'white';
-                } else {
-                    ctx.fillStyle = '#ff3030';
-                    ctx.strokeStyle = '#ff8800';
-                }
+            // Рисуем карту
+            if (mapLoaded) {
+                ctx.drawImage(mapImage, 0, 0, canvas.width, canvas.height);
+            } else {
+                ctx.fillStyle = '#1a0f0a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            // Частицы
+            for (const p of particles) {
+                ctx.globalAlpha = p.life / 50;
+                ctx.fillStyle = p.color;
                 ctx.beginPath();
-                ctx.arc(u.x, u.y, 6, 0, Math.PI * 2);
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
                 ctx.fill();
-                ctx.lineWidth = 1.5;
-                ctx.stroke();
-            });
+            }
+            ctx.globalAlpha = 1;
 
-            // Рисуем пули (лазеры)
-            bullets.forEach(b => {
+            // Юниты
+            for (const u of units) {
+                // Тень
+                ctx.fillStyle = 'rgba(0,0,0,0.4)';
+                ctx.beginPath();
+                ctx.ellipse(u.x, u.y + u.radius, u.radius, u.radius * 0.4, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Тело
+                ctx.fillStyle = u.side === 'republic' ? '#4a9eff' : '#ff3030';
+                ctx.strokeStyle = u.side === 'republic' ? '#ffffff' : '#ffaa00';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(u.x, u.y, u.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Полоска здоровья
+                if (u.hp < u.maxHp) {
+                    const barW = 16;
+                    const barH = 3;
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(u.x - barW/2, u.y - u.radius - 8, barW, barH);
+                    ctx.fillStyle = u.hp > 1 ? '#0f0' : '#f00';
+                    ctx.fillRect(u.x - barW/2, u.y - u.radius - 8, barW * (u.hp / u.maxHp), barH);
+                }
+            }
+
+            // Пули (лазеры)
+            for (const b of bullets) {
                 ctx.fillStyle = b.side === 'republic' ? '#4a9eff' : '#ff3030';
-                ctx.shadowBlur = 10;
+                ctx.shadowBlur = 8;
                 ctx.shadowColor = ctx.fillStyle;
                 ctx.beginPath();
                 ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.shadowBlur = 0;
-            });
+            }
         }
 
         function checkWin() {
             const rep = units.filter(u => u.side === 'republic').length;
-            const cis = units.filter(u => u.side === 'cis
+            const cis = units.filter(u => u.side === 'cis').length;
+
+            document.getElementById('republic').textContent = rep;
+            document.getElementById('cis').textContent = cis;
+
+            const msg = document.getElementById('message');
+            if (!gameEnded) {
+                if (rep === 0 && cis > 0) {
+                    gameEnded = true;
+                    msg.style.display = 'block';
+                    msg.style.color = '#ff3030';
+                    msg.textContent = '🔴 ПОБЕДА КНС! ';
+                    restartBtn.style.display = 'block';
+                } else if (cis === 0 && rep > 0) {
+                    gameEnded = true;
+                    msg.style.display = 'block';
+                    msg.style.color = '#4a9eff';
+                    msg.textContent = '🔵 ПОБЕДА РЕСПУБЛИКИ! 🔵';
+                    restartBtn.style.display = 'block';
+                }
+            }
+        }
+
+        function restartGame() {
+            units = [];
+            bullets = [];
+            particles = [];
+            gameEnded = false;
+            document.getElementById('message').style.display = 'none';
+            restartBtn.style.display = 'none';
+            createArmy('republic', 25);
+            createArmy('cis', 25);
+        }
+
+        restartBtn.addEventListener('click', restartGame);
+
+        function loop() {
+            update();
+            draw();
+            checkWin();
+            requestAnimationFrame(loop);
+        }
+
+        // Старт
+        createArmy('republic', 25);
+        createArmy('cis', 25);
+        loop();
+    </script>
+</body>
+</html>
