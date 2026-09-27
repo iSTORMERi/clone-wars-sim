@@ -3,324 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Clone Wars: Battle of Kamino</title>
+    <title>Kamino Simulation - Map</title>
     <style>
         body {
             margin: 0;
             padding: 0;
-            background: #050a14; /* Темно-синий фон океана */
+            background: #050a14; /* Темный фон подложки */
             overflow: hidden;
-            font-family: 'Courier New', Courier, monospace;
-            color: white;
             touch-action: none;
         }
         canvas {
             display: block;
         }
-        #ui {
-            position: absolute;
-            top: 15px;
-            left: 15px;
-            font-size: 16px;
-            font-weight: bold;
-            text-shadow: 0 0 5px #000;
-            pointer-events: none;
-            z-index: 10;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        #message {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 28px;
-            font-weight: bold;
-            text-align: center;
-            display: none;
-            text-shadow: 0 0 15px currentColor;
-            z-index: 20;
-            background: rgba(0,0,0,0.8);
-            padding: 20px 40px;
-            border-radius: 10px;
-            border: 2px solid currentColor;
-        }
-        #restartBtn {
-            position: absolute;
-            bottom: 40px;
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 12px 24px;
-            font-size: 16px;
-            font-family: inherit;
-            font-weight: bold;
-            background: #fff;
-            color: #050a14;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            display: none;
-            z-index: 20;
-            box-shadow: 0 0 15px rgba(255,255,255,0.3);
-        }
     </style>
 </head>
 <body>
     <canvas id="game"></canvas>
-    <div id="ui">
-        <div style="color: #4a9eff">🔵 РЕСПУБЛИКА: <span id="republic">0</span></div>
-        <div style="color: #ff3030; margin-top: 5px;">🔴 КНС: <span id="cis">0</span></div>
-    </div>
-    <div id="message"></div>
-    <button id="restartBtn">⚔️ ПЕРЕЗАПУСТИТЬ БИТВУ</button>
 
     <script>
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
-        const restartBtn = document.getElementById('restartBtn');
 
-        // Настройки карты Камино
-        let platforms = [];
-        const platformGap = 40; // Ширина "воды" между платформами
-        const platformCount = 6; // Количество полос платформ
-
-        function generateMap() {
-            platforms = [];
-            const totalWidth = canvas.width;
-            const totalHeight = canvas.height;
-            const platWidth = (totalWidth - (platformCount + 1) * platformGap) / platformCount;
-            
-            for (let i = 0; i < platformCount; i++) {
-                platforms.push({
-                    x: platformGap + i * (platWidth + platformGap),
-                    y: 80, // Отступ сверху для UI
-                    w: platWidth,
-                    h: totalHeight - 160 // Отступы сверху и снизу
-                });
-            }
-        }
+        // Настройки сетки Камино
+        const TILE_SIZE = 120; // Размер одной плиты
+        const GAP_SIZE = 4;    // Ширина неоновой линии
 
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-            generateMap();
-        }
-        resize();
-        window.addEventListener('resize', resize);
-
-        // Игровые объекты
-        let units = [];
-        let bullets = [];
-        let particles = [];
-        let rain = [];
-        let gameEnded = false;
-
-        // Генерация дождя
-        for(let i=0; i<150; i++) {
-            rain.push({
-                x: Math.random() * canvas.width,
-                y: Math.random() * canvas.height,
-                l: Math.random() * 15 + 5,
-                s: Math.random() * 5 + 5
-            });
+            drawMap();
         }
 
-        function createArmy(side, count) {
-            for (let i = 0; i < count; i++) {
-                // Спавним только на платформах
-                const plat = platforms[Math.floor(Math.random() * platforms.length)];
-                units.push({
-                    side: side,
-                    x: plat.x + Math.random() * plat.w,
-                    y: plat.y + Math.random() * plat.h,
-                    hp: 3,
-                    maxHp: 3,
-                    speed: 1 + Math.random() * 0.5,
-                    cooldown: Math.random() * 60,
-                    radius: 7
-                });
-            }
-        }
-
-        function createExplosion(x, y, color) {
-            for (let i = 0; i < 10; i++) {
-                particles.push({
-                    x: x, y: y,
-                    vx: (Math.random() - 0.5) * 5,
-                    vy: (Math.random() - 0.5) * 5,
-                    life: 25 + Math.random() * 15,
-                    color: color,
-                    size: 2 + Math.random() * 3
-                });
-            }
-        }
-
-        function findEnemy(unit) {
-            let closest = null;
-            let minDist = Infinity;
-            for (const u of units) {
-                if (u.side !== unit.side && u.hp > 0) {
-                    const d = Math.hypot(u.x - unit.x, u.y - unit.y);
-                    if (d < minDist) {
-                        minDist = d;
-                        closest = u;
-                    }
-                }
-            }
-            return { enemy: closest, dist: minDist };
-        }
-
-        // Проверка, находится ли точка на платформе
-        function isOnPlatform(x, y) {
-            for (const p of platforms) {
-                if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        function update() {
-            if (gameEnded) return;
-
-            for (const unit of units) {
-                if (unit.hp <= 0) continue;
-
-                const { enemy, dist } = findEnemy(unit);
-                if (!enemy) continue;
-
-                // Движение к врагу с проверкой платформ
-                if (dist > 100) {
-                    const dx = enemy.x - unit.x;
-                    const dy = enemy.y - unit.y;
-                    const len = Math.hypot(dx, dy);
-                    
-                    const nextX = unit.x + (dx / len) * unit.speed;
-                    const nextY = unit.y + (dy / len) * unit.speed;
-
-                    // Если следующий шаг на платформе - идем, иначе стоим
-                    if (isOnPlatform(nextX, nextY)) {
-                        unit.x = nextX;
-                        unit.y = nextY;
-                    }
-                }
-
-                // Стрельба
-                unit.cooldown--;
-                if (unit.cooldown <= 0 && dist < 300) {
-                    const dx = enemy.x - unit.x;
-                    const dy = enemy.y - unit.y;
-                    const len = Math.hypot(dx, dy);
-                    bullets.push({
-                        x: unit.x, y: unit.y,
-                        vx: (dx / len) * 7,
-                        vy: (dy / len) * 7,
-                        side: unit.side,
-                        life: 60
-                    });
-                    unit.cooldown = 25 + Math.random() * 25;
-                }
-            }
-
-            // Пули
-            for (const b of bullets) {
-                b.x += b.vx;
-                b.y += b.vy;
-                b.life--;
-
-                for (const u of units) {
-                    if (u.side !== b.side && u.hp > 0) {
-                        if (Math.hypot(u.x - b.x, u.y - b.y) < u.radius + 2) {
-                            u.hp--;
-                            b.life = 0;
-                            createExplosion(b.x, b.y, b.side === 'republic' ? '#4a9eff' : '#ff3030');
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // Частицы
-            for (const p of particles) {
-                p.x += p.vx;
-                p.y += p.vy;
-                p.life--;
-                p.size *= 0.92;
-            }
-
-            // Очистка
-            units = units.filter(u => u.hp > 0);
-            bullets = bullets.filter(b => b.life > 0);
-            particles = particles.filter(p => p.life > 0);
-        }
-
-        function draw() {
-            // Фон океана
+        function drawMap() {
+            // Очищаем экран темным фоном (это будет цвет "щелей")
             ctx.fillStyle = '#050a14';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Платформы Камино
-            ctx.fillStyle = '#2a3b4c'; // Серый цвет платформ
-            for (const p of platforms) {
-                ctx.fillRect(p.x, p.y, p.w, p.h);
-                
-                // Белые разделительные линии (свечение)
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(p.x, p.y, p.w, p.h);
-            }
+            // Рисуем серые плиты
+            ctx.fillStyle = '#2a3b4c'; // Цвет платформ Камино
+            
+            // Вычисляем количество плит по ширине и высоте
+            const cols = Math.ceil(canvas.width / (TILE_SIZE + GAP_SIZE));
+            const rows = Math.ceil(canvas.height / (TILE_SIZE + GAP_SIZE));
 
-            // Дождь
-            ctx.strokeStyle = 'rgba(174, 214, 241, 0.4)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            for(const r of rain) {
-                r.y += r.s;
-                if(r.y > canvas.height) { r.y = -20; r.x = Math.random() * canvas.width; }
-                ctx.moveTo(r.x, r.y);
-                ctx.lineTo(r.x - 2, r.y + r.l);
-            }
-            ctx.stroke();
-
-            // Частицы
-            for (const p of particles) {
-                ctx.globalAlpha = p.life / 40;
-                ctx.fillStyle = p.color;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            ctx.globalAlpha = 1;
-
-            // Юниты
-            for (const u of units) {
-                // Тень
-                ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                ctx.beginPath();
-                ctx.ellipse(u.x, u.y + u.radius, u.radius, u.radius * 0.4, 0, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Тело
-                ctx.fillStyle = u.side === 'republic' ? '#4a9eff' : '#ff3030';
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 1.5;
-                ctx.beginPath();
-                ctx.arc(u.x, u.y, u.radius, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
-
-                // HP бар
-                if (u.hp < u.maxHp) {
-                    const bw = 14, bh = 2;
-                    ctx.fillStyle = '#000';
-                    ctx.fillRect(u.x - bw/2, u.y - u.radius - 6, bw, bh);
-                    ctx.fillStyle = u.hp > 1 ? '#0f0' : '#f00';
-                    ctx.fillRect(u.x - bw/2, u.y - u.radius - 6, bw * (u.hp / u.maxHp), bh);
+            for (let i = 0; i < cols; i++) {
+                for (let j = 0; j < rows; j++) {
+                    const x = i * (TILE_SIZE + GAP_SIZE) + GAP_SIZE / 2;
+                    const y = j * (TILE_SIZE + GAP_SIZE) + GAP_SIZE / 2;
+                    
+                    // Рисуем плиту
+                    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
                 }
             }
 
-            // Лазеры
-            for (const b of bullets) {
-                ctx.fillStyle = b.side === 'republic'
+            // Добавляем легкое свечение на стыках для эффекта неона
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = 'rgba(255, 255, 255, 0.3)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.lineWidth = 1;
+            
+            // Можно раскомментировать этот блок, если хочешь явные белые линии поверх щелей
+            /*
+            for (let i = 0; i <= cols; i++) {
+                const x = i * (TILE_SIZE + GAP_SIZE);
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let j = 0; j <= rows; j++) {
+                const y = j * (TILE_SIZE + GAP_SIZE);
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            */
+            ctx.shadowBlur = 0; // Сброс эффектов
+        }
+
+        // Инициализация
+        window.addEventListener('resize', resize);
+        resize(); // Первый запуск отрисовки
+
+    </script>
+</body>
+</html>
