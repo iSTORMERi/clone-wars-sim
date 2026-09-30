@@ -25,10 +25,10 @@
         const ctx = canvas.getContext('2d');
 
         // Размер карты
-        const MAP_WIDTH = 4000;
-        const MAP_HEIGHT = 4000;
+        const MAP_WIDTH = 2000;
+        const MAP_HEIGHT = 1200;
 
-        // Позиция камеры
+        // Позиция камеры (стартуем в центре карты)
         let cameraX = MAP_WIDTH / 2 - window.innerWidth / 2;
         let cameraY = MAP_HEIGHT / 2 - window.innerHeight / 2;
 
@@ -37,17 +37,17 @@
         let lastX = 0;
         let lastY = 0;
 
-        // Аванпосты
+        // Аванпосты (поменяли местами: КНС слева, Республика справа)
         const outposts = {
             republic: {
-                x: 500,
-                y: 2000,
+                x: 1600,
+                y: 600,
                 color: '#4a9eff',
                 name: 'РЕСПУБЛИКА'
             },
             cis: {
-                x: 3500,
-                y: 2000,
+                x: 400,
+                y: 600,
                 color: '#ff3030',
                 name: 'КНС'
             }
@@ -56,12 +56,13 @@
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
+            drawMap();
         }
 
         function drawBuilding(x, y, width, height, color, name) {
             // Тень здания
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-            ctx.fillRect(x + 10, y + 10, width, height);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.fillRect(x + 8, y + 8, width, height);
 
             // Основное здание
             ctx.fillStyle = color;
@@ -72,21 +73,15 @@
             ctx.lineWidth = 3;
             ctx.strokeRect(x, y, width, height);
 
-            // Внутренняя деталь (имитация структуры)
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-            ctx.fillRect(x + 20, y + 20, width - 40, height - 40);
+            // Внутренняя деталь
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.fillRect(x + 15, y + 15, width - 30, height - 30);
 
-            // Название аванпоста
+            // Название
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 24px Arial';
+            ctx.font = 'bold 20px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText(name, x + width / 2, y - 20);
-
-            // Маркер центра
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(x + width / 2, y + height / 2, 8, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.fillText(name, x + width / 2, y - 15);
         }
 
         function drawMap() {
@@ -94,7 +89,6 @@
             ctx.fillStyle = '#1a2332';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Сохраняем контекст и смещаем камеру
             ctx.save();
             ctx.translate(-cameraX, -cameraY);
 
@@ -108,19 +102,8 @@
             ctx.strokeRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
 
             // Рисуем аванпосты
-            const buildingSize = 200;
+            const buildingSize = 180;
             
-            // Республиканский штаб
-            drawBuilding(
-                outposts.republic.x - buildingSize / 2,
-                outposts.republic.y - buildingSize / 2,
-                buildingSize,
-                buildingSize,
-                outposts.republic.color,
-                outposts.republic.name
-            );
-
-            // Сепаратистский штаб
             drawBuilding(
                 outposts.cis.x - buildingSize / 2,
                 outposts.cis.y - buildingSize / 2,
@@ -128,6 +111,15 @@
                 buildingSize,
                 outposts.cis.color,
                 outposts.cis.name
+            );
+
+            drawBuilding(
+                outposts.republic.x - buildingSize / 2,
+                outposts.republic.y - buildingSize / 2,
+                buildingSize,
+                buildingSize,
+                outposts.republic.color,
+                outposts.republic.name
             );
 
             ctx.restore();
