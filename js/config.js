@@ -33,9 +33,9 @@ const SQUAD_CONFIG = {
     colSpacing: 20,
     rowSpacing: 20,
     // Оригинальный командир ждёт 70% состава
-    attackThresholdOriginal: 0.70, 
+    attackThresholdOriginal: 0.70,
     // Преемник начинает паниковать и атакует при 50%
-    attackThresholdSuccessor: 0.50, 
+    attackThresholdSuccessor: 0.50,
     // Допустимое отклонение от строя (px)
     formationToleranceOriginal: 30,
     formationToleranceSuccessor: 50,
