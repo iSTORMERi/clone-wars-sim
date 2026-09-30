@@ -91,7 +91,6 @@ function drawUnit(u) {
             ctx.fillRect(u.x - 5, u.y - 2, 10, 4);
         }
     } else {
-        // Дроид — овал
         ctx.fillStyle = u.color;
         ctx.strokeStyle = '#8b7355';
         ctx.lineWidth = 1.5;
@@ -100,8 +99,8 @@ function drawUnit(u) {
         ctx.fill();
         ctx.stroke();
 
-        // Жёлтый ромб для командира
-        if (u.isCommander) {
+        // Жёлтый ромб ТОЛЬКО для оригинального командира (отличительный знак юнита)
+        if (u.isOriginalCommander) {
             ctx.fillStyle = COMMANDER_DROID_CONFIG.diamondColor;
             const diamondSize = 4;
             ctx.beginPath();
@@ -113,7 +112,7 @@ function drawUnit(u) {
             ctx.fill();
         }
 
-        // Зелёная точка только у текущего командира
+        // Зелёная точка для ЛЮБОГО командира (должность)
         if (u.isCommander) {
             ctx.fillStyle = '#00ff00';
             ctx.beginPath();
@@ -338,7 +337,7 @@ function update() {
 function updateUI() {
     const repAlive = units.filter(u => u.side === 'republic' && u.alive).length;
     const cisAlive = units.filter(u => u.side === 'cis' && u.alive).length;
-    const commandersCount = squads.length; // Количество активных отрядов = количество командиров
+    const commandersCount = squads.length;
     
     document.getElementById('repCount').textContent = repAlive;
     document.getElementById('cisCount').textContent = cisAlive;
