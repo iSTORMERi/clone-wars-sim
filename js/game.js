@@ -16,7 +16,7 @@ class Squad {
         this.commander = null;
         this.isOriginalCommanderAlive = true;
         this.state = 'FORMING';
-        this.isFullyFormed = false; // Новый флаг: все ли на местах
+        this.hasStartedMarch = false; // Флаг: начал ли отряд марш
         
         this.slots = [];
         let slotId = 0;
@@ -46,7 +46,6 @@ class Squad {
 
     removeMember(droid) {
         this.members = this.members.filter(m => m !== droid);
-        this.isFullyFormed = false; // Сброс при потере юнита
         
         if (droid === this.commander) {
             this.isOriginalCommanderAlive = false;
@@ -54,7 +53,7 @@ class Squad {
             if (this.members.length > 0) {
                 const successor = this.members[Math.floor(Math.random() * this.members.length)];
                 successor.isCommander = true;
-                successor.isOriginalCommander = false;
+                successor.isOriginalCommander = false; // Преемник НЕ оригинальный
                 this.commander = successor;
             } else {
                 this.commander = null;
@@ -71,7 +70,6 @@ class Squad {
         return this.getFillPercentage() >= threshold;
     }
 
-    // Проверка: все ли дроиды на своих местах
     checkFormationComplete() {
         if (this.members.length < SQUAD_CONFIG.maxSize) return false;
         
@@ -91,13 +89,11 @@ class Squad {
     update() {
         if (!this.commander) return;
 
-        // Проверяем, все ли на местах
-        if (this.state === 'FORMING') {
-            if (this.shouldAttack()) {
-                if (this.checkFormationComplete()) {
-                    this.isFullyFormed = true;
-                    this.state = 'MARCHING';
-                }
+        // Проверяем переход в марш
+        if (this.state === 'FORMING' && !this.hasStartedMarch) {
+            if (this.shouldAttack() && this.checkFormationComplete()) {
+                this.state = 'MARCHING';
+                this.hasStartedMarch = true; // Отряд начал марш, больше не вернётся в FORMING
             }
         }
 
@@ -108,11 +104,13 @@ class Squad {
             this.state = 'MARCHING';
         }
 
+        // Движение командира
         let targetX, targetY;
         if (this.state === 'FORMING') {
             targetX = this.baseX;
             targetY = this.baseY;
         } else {
+            // MARCHING или ENGAGING — всегда к точке захвата
             targetX = capturePoint.x;
             targetY = capturePoint.y;
         }
@@ -344,14 +342,11 @@ class Droid extends Unit {
 
     updateDroidBehavior(enemy, dist) {
         if (!this.squad || !this.squad.commander) {
-            // Если отряд уничтожен - идём к точке захвата
             this.moveToTarget(capturePoint.x, capturePoint.y);
             return;
         }
 
         const slot = this.squad.slots[this.slotIndex];
-        
-        // Целевая позиция = позиция командира + смещение слота
         const targetX = this.squad.commander.x + slot.x;
         const targetY = this.squad.commander.y + slot.y;
 
@@ -359,7 +354,6 @@ class Droid extends Unit {
         const dy = targetY - this.y;
         const distToSlot = Math.hypot(dx, dy);
 
-        // ВСЕГДА двигаемся к своей позиции в строю (даже в бою)
         if (distToSlot > 5) {
             let moveSpeed = this.speed;
             if (distToSlot > SQUAD_CONFIG.formationToleranceOriginal * 2) {
@@ -442,6 +436,7 @@ function createArmies() {
     units = [];
     squads = [];
 
+    // Республика: 9 клонов
     const repBase = bases.republic;
     for (let i = 0; i < 9; i++) {
         const angle = (i / 9) * Math.PI * 2;
@@ -450,23 +445,27 @@ function createArmies() {
         units.push(unit);
     }
 
+    // КНС: Создаём ДВА отряда по 32 дроида
     const cisBase = bases.cis;
-    const firstSquad = new Squad(cisBase.x, cisBase.y, 1);
-    squads.push(firstSquad);
+    
+    for (let squadNum = 1; squadNum <= 2; squadNum++) {
+        const squad = new Squad(cisBase.x, cisBase.y, squadNum);
+        squads.push(squad);
 
-    const commanderSlotIndex = firstSquad.slots.findIndex(s => s.isCommanderSlot);
-    const commander = new CommanderDroid(COMMANDER_DROID_CONFIG, cisBase.x, cisBase.y);
-    firstSquad.addMember(commander, commanderSlotIndex);
-    units.push(commander);
+        const commanderSlotIndex = squad.slots.findIndex(s => s.isCommanderSlot);
+        const commander = new CommanderDroid(COMMANDER_DROID_CONFIG, cisBase.x, cisBase.y);
+        squad.addMember(commander, commanderSlotIndex);
+        units.push(commander);
 
-    for (let i = 0; i < SQUAD_CONFIG.maxSize; i++) {
-        if (i === commanderSlotIndex) continue;
-        const slot = firstSquad.slots[i];
-        const x = cisBase.x + slot.x + (Math.random()-0.5)*10;
-        const y = cisBase.y + slot.y + (Math.random()-0.5)*10;
-        const droid = new Droid(DROID_CONFIG, x, y);
-        firstSquad.addMember(droid, i);
-        units.push(droid);
+        for (let i = 0; i < SQUAD_CONFIG.maxSize; i++) {
+            if (i === commanderSlotIndex) continue;
+            const slot = squad.slots[i];
+            const x = cisBase.x + slot.x + (Math.random()-0.5)*10;
+            const y = cisBase.y + slot.y + (Math.random()-0.5)*10;
+            const droid = new Droid(DROID_CONFIG, x, y);
+            squad.addMember(droid, i);
+            units.push(droid);
+        }
     }
 }
 
