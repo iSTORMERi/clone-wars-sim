@@ -91,40 +91,29 @@ function drawUnit(u) {
             ctx.fillRect(u.x - 5, u.y - 2, 10, 4);
         }
     } else {
+        // Дроид — овал
         ctx.fillStyle = u.color;
-        
-        // Оригинальный командир: жёлтая обводка + свечение
-        if (u.isOriginalCommander) {
-            ctx.strokeStyle = SQUAD_CONFIG.commanderOutline;
-            ctx.lineWidth = 2;
-            ctx.shadowBlur = 6;
-            ctx.shadowColor = SQUAD_CONFIG.commanderOutline;
-        } 
-        // Преемник: обычная обводка, без свечения (или можно сделать очень тусклое)
-        else {
-            ctx.strokeStyle = '#8b7355';
-            ctx.lineWidth = 1.5;
-            ctx.shadowBlur = 0;
-        }
-
+        ctx.strokeStyle = '#8b7355';
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.ellipse(u.x, u.y, u.radius * 0.7, u.radius * 1.4, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        ctx.shadowBlur = 0;
 
-        // Антенна ТОЛЬКО у оригинального командира
-        if (u.isOriginalCommander) {
-            ctx.fillStyle = SQUAD_CONFIG.commanderAntenna;
+        // Жёлтый ромб для командира
+        if (u.isCommander) {
+            ctx.fillStyle = COMMANDER_DROID_CONFIG.diamondColor;
+            const diamondSize = 4;
             ctx.beginPath();
-            ctx.moveTo(u.x - 3, u.y - u.radius * 1.2);
-            ctx.lineTo(u.x + 3, u.y - u.radius * 1.2);
-            ctx.lineTo(u.x, u.y - u.radius * 1.8);
+            ctx.moveTo(u.x, u.y - diamondSize);
+            ctx.lineTo(u.x + diamondSize, u.y);
+            ctx.lineTo(u.x, u.y + diamondSize);
+            ctx.lineTo(u.x - diamondSize, u.y);
             ctx.closePath();
             ctx.fill();
         }
 
-        // ЗЕЛЁНАЯ ТОЧКА ТОЛЬКО у текущего командира (оригинального или преемника)
+        // Зелёная точка только у текущего командира
         if (u.isCommander) {
             ctx.fillStyle = '#00ff00';
             ctx.beginPath();
@@ -272,6 +261,7 @@ function drawMap() {
         ctx.fill();
     }
     ctx.globalAlpha = 1;
+
     ctx.restore();
 }
 
@@ -348,8 +338,11 @@ function update() {
 function updateUI() {
     const repAlive = units.filter(u => u.side === 'republic' && u.alive).length;
     const cisAlive = units.filter(u => u.side === 'cis' && u.alive).length;
+    const commandersCount = squads.length; // Количество активных отрядов = количество командиров
+    
     document.getElementById('repCount').textContent = repAlive;
     document.getElementById('cisCount').textContent = cisAlive;
+    document.getElementById('commandersCount').textContent = commandersCount;
     document.getElementById('zoomLevel').textContent = Math.round(zoom * 100) + '%';
 }
 
