@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Kamino Simulation - Outposts</title>
+    <title>Kamino Simulation - Capture Point</title>
     <style>
         body {
             margin: 0;
@@ -38,14 +38,14 @@
         const ctx = canvas.getContext('2d');
         const zoomDisplay = document.getElementById('zoomLevel');
 
-        // Размер карты
-        const MAP_WIDTH = 2000;
-        const MAP_HEIGHT = 1200;
+        // Размер карты (увеличена в 2 раза)
+        const MAP_WIDTH = 4000;
+        const MAP_HEIGHT = 2400;
 
         // Позиция камеры
         let cameraX = MAP_WIDTH / 2 - window.innerWidth / 2;
         let cameraY = MAP_HEIGHT / 2 - window.innerHeight / 2;
-        let zoom = 1; // Масштаб (1 = 100%)
+        let zoom = 1;
 
         // Для перемещения пальцем
         let isDragging = false;
@@ -56,20 +56,28 @@
         let initialPinchDistance = 0;
         let initialZoom = 1;
 
-        // Аванпосты (цвета поменяны: Республика - красная, КНС - синяя)
+        // Аванпосты (позиции пересчитаны для новой карты)
         const outposts = {
             republic: {
-                x: 1600,
-                y: 600,
-                color: '#ff3030', // Красный
+                x: 3200,
+                y: 1200,
+                color: '#ff3030',
                 name: 'РЕСПУБЛИКА'
             },
             cis: {
-                x: 400,
-                y: 600,
-                color: '#4a9eff', // Синий
+                x: 800,
+                y: 1200,
+                color: '#4a9eff',
                 name: 'КНС'
             }
+        };
+
+        // Точка захвата в центре
+        const capturePoint = {
+            x: 2000,
+            y: 1200,
+            radius: 80,
+            pulsePhase: 0
         };
 
         function resize() {
@@ -101,6 +109,45 @@
             ctx.font = 'bold 20px Arial';
             ctx.textAlign = 'center';
             ctx.fillText(name, x + width / 2, y - 15);
+        }
+
+        function drawCapturePoint() {
+            const { x, y, radius, pulsePhase } = capturePoint;
+            
+            // Пульсирующее свечение
+            const pulseSize = Math.sin(pulsePhase) * 10;
+            
+            // Внешнее кольцо
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, radius + 20 + pulseSize, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Основное кольцо
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Заполнение
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Центральная точка
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(x, y, 15, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Надпись
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('ЗАХВАТ', x, y - radius - 30);
         }
 
         function drawMap() {
@@ -146,25 +193,28 @@
                 outposts.republic.name
             );
 
+            // Рисуем точку захвата
+            drawCapturePoint();
+
             ctx.restore();
+
+            // Обновляем пульсацию
+            capturePoint.pulsePhase += 0.05;
 
             // Обновляем отображение зума
             zoomDisplay.textContent = Math.round(zoom * 100) + '%';
         }
 
-        // Вычисление расстояния между двумя точками касания
         function getDistance(touch1, touch2) {
             return Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
         }
 
-        // Управление камерой (перемещение)
         canvas.addEventListener('touchstart', (e) => {
             if (e.touches.length === 1) {
                 isDragging = true;
                 lastX = e.touches[0].clientX;
                 lastY = e.touches[0].clientY;
             } else if (e.touches.length === 2) {
-                // Начало pinch-жеста
                 isDragging = false;
                 initialPinchDistance = getDistance(e.touches[0], e.touches[1]);
                 initialZoom = zoom;
@@ -175,7 +225,6 @@
             e.preventDefault();
 
             if (e.touches.length === 1 && isDragging) {
-                // Перемещение камеры
                 const currentX = e.touches[0].clientX;
                 const currentY = e.touches[0].clientY;
                 
@@ -187,11 +236,10 @@
                 
                 drawMap();
             } else if (e.touches.length === 2) {
-                // Pinch-зум
                 const currentDistance = getDistance(e.touches[0], e.touches[1]);
                 const scale = currentDistance / initialPinchDistance;
                 
-                zoom = Math.max(0.3, Math.min(3, initialZoom * scale)); // Ограничение зума от 30% до 300%
+                zoom = Math.max(0.3, Math.min(3, initialZoom * scale));
                 
                 drawMap();
             }
@@ -203,7 +251,6 @@
             }
         });
 
-        // Для мыши (тестирование на ПК)
         canvas.addEventListener('mousedown', (e) => {
             isDragging = true;
             lastX = e.clientX;
@@ -230,7 +277,6 @@
             isDragging = false;
         });
 
-        // Зум колесиком мыши
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
             const zoomSpeed = 0.1;
@@ -244,10 +290,15 @@
             drawMap();
         });
 
-        // Запуск
         window.addEventListener('resize', resize);
         resize();
-        drawMap();
+        
+        // Анимация пульсации
+        function animate() {
+            drawMap();
+            requestAnimationFrame(animate);
+        }
+        animate();
 
     </script>
 </body>
