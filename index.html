@@ -15,40 +15,59 @@
         canvas {
             display: block;
         }
+        #ui {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 8px 12px;
+            border-radius: 6px;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
     <canvas id="game"></canvas>
+    <div id="ui">Зум: <span id="zoomLevel">100%</span></div>
 
     <script>
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
+        const zoomDisplay = document.getElementById('zoomLevel');
 
         // Размер карты
         const MAP_WIDTH = 2000;
         const MAP_HEIGHT = 1200;
 
-        // Позиция камеры (стартуем в центре карты)
+        // Позиция камеры
         let cameraX = MAP_WIDTH / 2 - window.innerWidth / 2;
         let cameraY = MAP_HEIGHT / 2 - window.innerHeight / 2;
+        let zoom = 1; // Масштаб (1 = 100%)
 
         // Для перемещения пальцем
         let isDragging = false;
         let lastX = 0;
         let lastY = 0;
 
-        // Аванпосты (поменяли местами: КНС слева, Республика справа)
+        // Для зума (pinch)
+        let initialPinchDistance = 0;
+        let initialZoom = 1;
+
+        // Аванпосты (цвета поменяны: Республика - красная, КНС - синяя)
         const outposts = {
             republic: {
                 x: 1600,
                 y: 600,
-                color: '#4a9eff',
+                color: '#ff3030', // Красный
                 name: 'РЕСПУБЛИКА'
             },
             cis: {
                 x: 400,
                 y: 600,
-                color: '#ff3030',
+                color: '#4a9eff', // Синий
                 name: 'КНС'
             }
         };
@@ -90,6 +109,11 @@
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             ctx.save();
+            
+            // Применяем зум и камеру
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.scale(zoom, zoom);
+            ctx.translate(-canvas.width / 2, -canvas.height / 2);
             ctx.translate(-cameraX, -cameraY);
 
             // Рисуем карту
@@ -123,35 +147,63 @@
             );
 
             ctx.restore();
+
+            // Обновляем отображение зума
+            zoomDisplay.textContent = Math.round(zoom * 100) + '%';
         }
 
-        // Управление камерой
+        // Вычисление расстояния между двумя точками касания
+        function getDistance(touch1, touch2) {
+            return Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+        }
+
+        // Управление камерой (перемещение)
         canvas.addEventListener('touchstart', (e) => {
-            isDragging = true;
-            lastX = e.touches[0].clientX;
-            lastY = e.touches[0].clientY;
+            if (e.touches.length === 1) {
+                isDragging = true;
+                lastX = e.touches[0].clientX;
+                lastY = e.touches[0].clientY;
+            } else if (e.touches.length === 2) {
+                // Начало pinch-жеста
+                isDragging = false;
+                initialPinchDistance = getDistance(e.touches[0], e.touches[1]);
+                initialZoom = zoom;
+            }
         });
 
         canvas.addEventListener('touchmove', (e) => {
-            if (!isDragging) return;
             e.preventDefault();
-            
-            const currentX = e.touches[0].clientX;
-            const currentY = e.touches[0].clientY;
-            
-            cameraX -= (currentX - lastX);
-            cameraY -= (currentY - lastY);
-            
-            lastX = currentX;
-            lastY = currentY;
-            
-            drawMap();
+
+            if (e.touches.length === 1 && isDragging) {
+                // Перемещение камеры
+                const currentX = e.touches[0].clientX;
+                const currentY = e.touches[0].clientY;
+                
+                cameraX -= (currentX - lastX) / zoom;
+                cameraY -= (currentY - lastY) / zoom;
+                
+                lastX = currentX;
+                lastY = currentY;
+                
+                drawMap();
+            } else if (e.touches.length === 2) {
+                // Pinch-зум
+                const currentDistance = getDistance(e.touches[0], e.touches[1]);
+                const scale = currentDistance / initialPinchDistance;
+                
+                zoom = Math.max(0.3, Math.min(3, initialZoom * scale)); // Ограничение зума от 30% до 300%
+                
+                drawMap();
+            }
         });
 
-        canvas.addEventListener('touchend', () => {
-            isDragging = false;
+        canvas.addEventListener('touchend', (e) => {
+            if (e.touches.length < 2) {
+                isDragging = false;
+            }
         });
 
+        // Для мыши (тестирование на ПК)
         canvas.addEventListener('mousedown', (e) => {
             isDragging = true;
             lastX = e.clientX;
@@ -161,8 +213,8 @@
         canvas.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
             
-            cameraX -= (e.clientX - lastX);
-            cameraY -= (e.clientY - lastY);
+            cameraX -= (e.clientX - lastX) / zoom;
+            cameraY -= (e.clientY - lastY) / zoom;
             
             lastX = e.clientX;
             lastY = e.clientY;
@@ -176,6 +228,20 @@
 
         canvas.addEventListener('mouseleave', () => {
             isDragging = false;
+        });
+
+        // Зум колесиком мыши
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomSpeed = 0.1;
+            
+            if (e.deltaY < 0) {
+                zoom = Math.min(3, zoom + zoomSpeed);
+            } else {
+                zoom = Math.max(0.3, zoom - zoomSpeed);
+            }
+            
+            drawMap();
         });
 
         // Запуск
