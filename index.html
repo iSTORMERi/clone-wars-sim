@@ -64,14 +64,14 @@
             fireRate: 40,
             detectRange: 250,
             fireRange: 220,
-            respawnDelay: 180, // 3 секунды при 60fps
+            respawnDelay: 180,
             boltColor: '#4a9eff',
             boltSpeed: 8
         };
 
         const DROID_CONFIG = {
             side: 'cis',
-            color: '#c9a96e', // жёлто-коричневый/кожаный
+            color: '#c9a96e',
             shape: 'oval',
             radius: 6,
             hp: 1,
@@ -80,7 +80,7 @@
             fireRate: 50,
             detectRange: 200,
             fireRange: 180,
-            respawnDelay: 120, // 2 секунды
+            respawnDelay: 120,
             boltColor: '#ff3030',
             boltSpeed: 6
         };
@@ -102,10 +102,12 @@
         let units = [];
         let bullets = [];
         let particles = [];
+        let grenades = [];
+        let explosions = [];
 
         // ==================== КЛАСС ЮНИТА ====================
         class Unit {
-            constructor(config, x, y, formationOffset = null) {
+            constructor(config, x, y, formationOffset = null, isMedic = false) {
                 this.side = config.side;
                 this.color = config.color;
                 this.shape = config.shape;
@@ -123,24 +125,40 @@
                 
                 this.x = x;
                 this.y = y;
-                this.formationOffset = formationOffset; // для дроидов — смещение в формации
+                this.formationOffset = formationOffset;
                 this.cooldown = Math.random() * config.fireRate;
                 this.alive = true;
                 this.respawnTimer = 0;
                 this.target = null;
+                this.isMedic = isMedic;
                 
-                // Для клонов — случайное отклонение от курса
                 this.wanderAngle = Math.random() * Math.PI * 2;
                 this.wanderTimer = 0;
+                
+                // Гранаты (только для клонов)
+                this.empGrenades = 0;
+                this.thermalGrenades = 0;
+                this.grenadeCooldown = 0;
+                
+                // Для дроидов - отслеживание формации
+                this.inFormation = false;
+                this.fireIndex = 0; // индекс в очереди стрельбы
+            }
+
+            assignGrenades() {
+                if (this.side !== 'republic' || this.isMedic) return;
+                this.empGrenades = 3;
+                this.thermalGrenades = 2;
             }
 
             respawn(baseX, baseY) {
                 this.hp = this.maxHp;
                 this.alive = true;
                 this.cooldown = Math.random() * this.fireRate;
-                // Спавн с небольшим разбросом вокруг базы
                 this.x = baseX + (Math.random() - 0.5) * 100;
                 this.y = baseY + (Math.random() - 0.5) * 100;
+                this.assignGrenades();
+                this.grenadeCooldown = 0;
             }
 
             findNearestEnemy() {
@@ -156,6 +174,47 @@
                     }
                 }
                 return { unit: nearest, dist: minDist };
+            }
+
+            findMedic() {
+                let nearest = null;
+                let minDist = Infinity;
+                for (const u of units) {
+                    if (u.alive && u.side === this.side && u.isMedic) {
+                        const d = Math.hypot(u.x - this.x, u.y - this.y);
+                        if (d < minDist) {
+                            minDist = d;
+                            nearest = u;
+                        }
+                    }
+                }
+                return { medic: nearest, dist: minDist };
+            }
+
+            findWoundedAlly() {
+                let nearest = null;
+                let minDist = Infinity;
+                for (const u of units) {
+                    if (u.alive && u.side === this.side && u.hp < u.maxHp && !u.isMedic) {
+                        const d = Math.hypot(u.x - this.x, u.y - this.y);
+                        if (d < minDist) {
+                            minDist = d;
+                            nearest = u;
+                        }
+                    }
+                }
+                return { ally: nearest, dist: minDist };
+            }
+
+            countEnemiesInRange(range) {
+                let count = 0;
+                for (const u of units) {
+                    if (u.alive && u.side !== this.side) {
+                        const d = Math.hypot(u.x - this.x, u.y - this.y);
+                        if (d < range) count++;
+                    }
+                }
+                return count;
             }
 
             update() {
@@ -177,56 +236,78 @@
                     this.updateDroidBehavior(enemy, dist);
                 }
 
-                // Ограничение границами карты
                 this.x = Math.max(this.radius, Math.min(MAP_WIDTH - this.radius, this.x));
                 this.y = Math.max(this.radius, Math.min(MAP_HEIGHT - this.radius, this.y));
 
-                // Стрельба
                 this.cooldown--;
                 if (this.cooldown <= 0 && enemy && dist < this.fireRange) {
                     this.shoot(enemy);
                     this.cooldown = this.fireRate + Math.random() * 20;
                 }
+
+                if (this.grenadeCooldown > 0) this.grenadeCooldown--;
             }
 
             updateCloneBehavior(enemy, dist) {
-                // Отступление при низком HP
-                if (this.hp <= 1) {
-                    const base = bases.republic;
-                    const dx = base.x - this.x;
-                    const dy = base.y - this.y;
-                    const len = Math.hypot(dx, dy);
-                    if (len > 50) {
-                        this.x += (dx / len) * this.speed;
-                        this.y += (dy / len) * this.speed;
+                // Медик ищет раненых
+                if (this.isMedic) {
+                    const { ally, dist: allyDist } = this.findWoundedAlly();
+                    if (ally && allyDist < this.detectRange) {
+                        const dx = ally.x - this.x;
+                        const dy = ally.y - this.y;
+                        const len = Math.hypot(dx, dy);
+                        if (len > 15) {
+                            this.x += (dx / len) * this.speed;
+                            this.y += (dy / len) * this.speed;
+                        }
+                        // Лечение при контакте
+                        if (len <= 15 && ally.hp < ally.maxHp) {
+                            ally.hp = Math.min(ally.maxHp, ally.hp + 0.02);
+                            return; // не стреляем пока лечим
+                        }
+                    } else {
+                        // Нет раненых - идём к точке захвата
+                        this.moveToCapturePoint();
                     }
                     return;
                 }
 
-                // Движение к точке захвата с зигзагом
-                const tx = capturePoint.x;
-                const ty = capturePoint.y;
-                const dx = tx - this.x;
-                const dy = ty - this.y;
-                const len = Math.hypot(dx, dy);
-
-                if (len > 30) {
-                    // Зигзаг: добавляем перпендикулярное отклонение
-                    this.wanderTimer--;
-                    if (this.wanderTimer <= 0) {
-                        this.wanderAngle = (Math.random() - 0.5) * 1.5;
-                        this.wanderTimer = 30 + Math.random() * 60;
+                // Раненый клон ищет медика
+                if (this.hp < this.maxHp) {
+                    const { medic, dist: medicDist } = this.findMedic();
+                    if (medic && medicDist < this.detectRange) {
+                        const dx = medic.x - this.x;
+                        const dy = medic.y - this.y;
+                        const len = Math.hypot(dx, dy);
+                        if (len > 15) {
+                            this.x += (dx / len) * this.speed;
+                            this.y += (dy / len) * this.speed;
+                        }
+                        return; // не стреляем пока идём к медику
+                    } else {
+                        // Нет медика - отступаем на базу
+                        const base = bases.republic;
+                        const dx = base.x - this.x;
+                        const dy = base.y - this.y;
+                        const len = Math.hypot(dx, dy);
+                        if (len > 50) {
+                            this.x += (dx / len) * this.speed;
+                            this.y += (dy / len) * this.speed;
+                        } else {
+                            // На базе постепенно лечимся
+                            this.hp = Math.min(this.maxHp, this.hp + 0.01);
+                        }
+                        return;
                     }
-
-                    const perpX = -dy / len;
-                    const perpY = dx / len;
-                    const wanderStrength = 0.4;
-
-                    this.x += ((dx / len) + perpX * Math.sin(this.wanderAngle) * wanderStrength) * this.speed;
-                    this.y += ((dy / len) + perpY * Math.sin(this.wanderAngle) * wanderStrength) * this.speed;
                 }
 
-                // Подстраховка: отталкивание от союзников (не кучковаться)
+                // Здоровый клон - бросаем гранаты если нужно
+                this.tryThrowGrenade();
+
+                // Движение к точке захвата с зигзагом
+                this.moveToCapturePoint();
+
+                // Подстраховка: отталкивание от союзников
                 for (const u of units) {
                     if (u.alive && u.side === this.side && u !== this) {
                         const d = Math.hypot(u.x - this.x, u.y - this.y);
@@ -240,12 +321,83 @@
                 }
             }
 
+            moveToCapturePoint() {
+                const tx = capturePoint.x;
+                const ty = capturePoint.y;
+                const dx = tx - this.x;
+                const dy = ty - this.y;
+                const len = Math.hypot(dx, dy);
+
+                if (len > 30) {
+                    this.wanderTimer--;
+                    if (this.wanderTimer <= 0) {
+                        this.wanderAngle = (Math.random() - 0.5) * 1.5;
+                        this.wanderTimer = 30 + Math.random() * 60;
+                    }
+
+                    const perpX = -dy / len;
+                    const perpY = dx / len;
+                    const wanderStrength = 0.4;
+
+                    this.x += ((dx / len) + perpX * Math.sin(this.wanderAngle) * wanderStrength) * this.speed;
+                    this.y += ((dy / len) + perpY * Math.sin(this.wanderAngle) * wanderStrength) * this.speed;
+                }
+            }
+
+            tryThrowGrenade() {
+                if (this.grenadeCooldown > 0) return;
+                if (this.empGrenades <= 0 && this.thermalGrenades <= 0) return;
+
+                const enemyCount = this.countEnemiesInRange(this.detectRange);
+                if (enemyCount < 5) return;
+
+                // Проверяем, не летит ли уже граната в эту область
+                const grenadeInArea = grenades.some(g => {
+                    const d = Math.hypot(g.x - this.x, g.y - this.y);
+                    return d < 200 && g.side === this.side;
+                });
+                if (grenadeInArea) return;
+
+                // Бросаем гранату
+                const enemy = this.target;
+                if (!enemy) return;
+
+                if (this.empGrenades > 0 && Math.random() < 0.6) {
+                    this.throwGrenade('emp', enemy.x, enemy.y);
+                    this.empGrenades--;
+                } else if (this.thermalGrenades > 0) {
+                    this.throwGrenade('thermal', enemy.x, enemy.y);
+                    this.thermalGrenades--;
+                }
+
+                this.grenadeCooldown = 180; // 3 секунды задержки
+            }
+
+            throwGrenade(type, targetX, targetY) {
+                const dx = targetX - this.x;
+                const dy = targetY - this.y;
+                const len = Math.hypot(dx, dy);
+                grenades.push({
+                    x: this.x,
+                    y: this.y,
+                    vx: (dx / len) * 4,
+                    vy: (dy / len) * 4,
+                    type: type,
+                    side: this.side,
+                    life: 90,
+                    targetX: targetX,
+                    targetY: targetY
+                });
+            }
+
             updateDroidBehavior(enemy, dist) {
-                // Дроиды держат формацию и идут к точке захвата
+                // Проверяем сформированность
+                const formationStatus = this.checkFormation();
+                this.inFormation = formationStatus.inPosition;
+
                 const tx = capturePoint.x;
                 const ty = capturePoint.y;
 
-                // Целевая позиция с учётом формации
                 let targetX = tx;
                 let targetY = ty;
                 if (this.formationOffset) {
@@ -258,12 +410,11 @@
                 const len = Math.hypot(dx, dy);
 
                 if (len > 20) {
-                    // Дроиды идут строго по прямой, без манёвров
                     this.x += (dx / len) * this.speed;
                     this.y += (dy / len) * this.speed;
                 }
 
-                // Возврат в строй: притяжение к идеальной позиции формации
+                // Возврат в строй
                 if (this.formationOffset && len <= 20) {
                     const idealX = tx + this.formationOffset.x;
                     const idealY = ty + this.formationOffset.y;
@@ -277,11 +428,28 @@
                 }
             }
 
+            checkFormation() {
+                if (!this.formationOffset) return { inPosition: false, percentage: 0 };
+                
+                const tx = capturePoint.x;
+                const ty = capturePoint.y;
+                const idealX = tx + this.formationOffset.x;
+                const idealY = ty + this.formationOffset.y;
+                const d = Math.hypot(idealX - this.x, idealY - this.y);
+                
+                return {
+                    inPosition: d < 30,
+                    distance: d
+                };
+            }
+
             shoot(enemy) {
-                // Проверка точности
+                // Медик стреляет реже
+                const fireChance = this.isMedic ? 0.3 : 1.0;
+                if (Math.random() > fireChance) return;
+
                 if (Math.random() > this.accuracy) {
-                    // Промах — болт летит мимо
-                    const spread = 30; // разброс в пикселях
+                    const spread = 30;
                     const targetX = enemy.x + (Math.random() - 0.5) * spread;
                     const targetY = enemy.y + (Math.random() - 0.5) * spread;
                     const dx = targetX - this.x;
@@ -298,7 +466,6 @@
                     return;
                 }
 
-                // Попадание (целимся точно)
                 const dx = enemy.x - this.x;
                 const dy = enemy.y - this.y;
                 const len = Math.hypot(dx, dy);
@@ -316,14 +483,12 @@
             draw() {
                 if (!this.alive) return;
 
-                // Тень
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
                 ctx.beginPath();
                 ctx.ellipse(this.x, this.y + this.radius, this.radius, this.radius * 0.4, 0, 0, Math.PI * 2);
                 ctx.fill();
 
                 if (this.shape === 'circle') {
-                    // Клон — белый кружок
                     ctx.fillStyle = this.color;
                     ctx.strokeStyle = '#cccccc';
                     ctx.lineWidth = 1.5;
@@ -331,8 +496,14 @@
                     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
                     ctx.fill();
                     ctx.stroke();
+
+                    // Красный крест для медика
+                    if (this.isMedic) {
+                        ctx.fillStyle = '#ff0000';
+                        ctx.fillRect(this.x - 2, this.y - 5, 4, 10);
+                        ctx.fillRect(this.x - 5, this.y - 2, 10, 4);
+                    }
                 } else {
-                    // Дроид — овал (вытянутый по вертикали)
                     ctx.fillStyle = this.color;
                     ctx.strokeStyle = '#8b7355';
                     ctx.lineWidth = 1.5;
@@ -340,9 +511,16 @@
                     ctx.ellipse(this.x, this.y, this.radius * 0.7, this.radius * 1.4, 0, 0, Math.PI * 2);
                     ctx.fill();
                     ctx.stroke();
+
+                    // Индикатор формации
+                    if (this.inFormation) {
+                        ctx.fillStyle = '#00ff00';
+                        ctx.beginPath();
+                        ctx.arc(this.x, this.y - this.radius * 1.4 - 5, 3, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
                 }
 
-                // Полоска HP (только если ранен)
                 if (this.hp < this.maxHp) {
                     const bw = 14, bh = 2;
                     ctx.fillStyle = '#000';
@@ -357,16 +535,17 @@
         function createArmies() {
             units = [];
 
-            // Республика: 9 клонов, спавн на базе
             const repBase = bases.republic;
             for (let i = 0; i < 9; i++) {
                 const angle = (i / 9) * Math.PI * 2;
                 const x = repBase.x + Math.cos(angle) * 60;
                 const y = repBase.y + Math.sin(angle) * 60;
-                units.push(new Unit(CLONE_CONFIG, x, y));
+                const isMedic = (i === 0); // первый клон - медик
+                const unit = new Unit(CLONE_CONFIG, x, y, null, isMedic);
+                unit.assignGrenades();
+                units.push(unit);
             }
 
-            // КНС: 32 дроида, формация 4 колонки × 8 рядов
             const cisBase = bases.cis;
             const colSpacing = 20;
             const rowSpacing = 20;
@@ -375,16 +554,18 @@
             const startX = cisBase.x - ((cols - 1) * colSpacing) / 2;
             const startY = cisBase.y - ((rows - 1) * rowSpacing) / 2;
 
+            let fireIndex = 0;
             for (let row = 0; row < rows; row++) {
                 for (let col = 0; col < cols; col++) {
                     const x = startX + col * colSpacing;
                     const y = startY + row * rowSpacing;
-                    // Смещение в формации относительно точки захвата
                     const formationOffset = {
                         x: (col - (cols - 1) / 2) * colSpacing,
                         y: (row - (rows - 1) / 2) * rowSpacing
                     };
-                    units.push(new Unit(DROID_CONFIG, x, y, formationOffset));
+                    const unit = new Unit(DROID_CONFIG, x, y, formationOffset);
+                    unit.fireIndex = fireIndex++;
+                    units.push(unit);
                 }
             }
         }
@@ -396,7 +577,6 @@
                 b.y += b.vy;
                 b.life--;
 
-                // Проверка попаданий
                 if (b.target && b.target.alive) {
                     const d = Math.hypot(b.target.x - b.x, b.target.y - b.y);
                     if (d < b.target.radius + 3) {
@@ -410,7 +590,6 @@
                         }
                     }
                 } else {
-                    // Если цель мертва или болт летел мимо — проверяем всех
                     for (const u of units) {
                         if (u.alive && u.side !== b.side) {
                             const d = Math.hypot(u.x - b.x, u.y - b.y);
@@ -430,6 +609,64 @@
                 }
             }
             bullets = bullets.filter(b => b.life > 0 && b.x > 0 && b.x < MAP_WIDTH && b.y > 0 && b.y < MAP_HEIGHT);
+        }
+
+        // ==================== ГРАНАТЫ ====================
+        function updateGrenades() {
+            for (const g of grenades) {
+                g.x += g.vx;
+                g.y += g.vy;
+                g.life--;
+
+                if (g.life <= 0) {
+                    // Взрыв
+                    if (g.type === 'emp') {
+                        explosions.push({
+                            x: g.x, y: g.y,
+                            type: 'emp',
+                            radius: 100,
+                            life: 60,
+                            maxLife: 60
+                        });
+                        // Урон дроидам
+                        for (const u of units) {
+                            if (u.alive && u.side === 'cis') {
+                                const d = Math.hypot(u.x - g.x, u.y - g.y);
+                                if (d < 100) {
+                                    u.hp = 0;
+                                    u.alive = false;
+                                    u.respawnTimer = u.respawnDelay;
+                                    createExplosion(u.x, u.y, '#00ffff', 20);
+                                }
+                            }
+                        }
+                    } else {
+                        explosions.push({
+                            x: g.x, y: g.y,
+                            type: 'thermal',
+                            radius: 80,
+                            life: 90,
+                            maxLife: 90
+                        });
+                        // Урон всем
+                        for (const u of units) {
+                            if (u.alive) {
+                                const d = Math.hypot(u.x - g.x, u.y - g.y);
+                                if (d < 80) {
+                                    u.hp -= 2;
+                                    createExplosion(u.x, u.y, '#ff6600', 10);
+                                    if (u.hp <= 0) {
+                                        u.alive = false;
+                                        u.respawnTimer = u.respawnDelay;
+                                        createExplosion(u.x, u.y, u.color, 15);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            grenades = grenades.filter(g => g.life > 0);
         }
 
         // ==================== ЧАСТИЦЫ ====================
@@ -454,6 +691,13 @@
                 p.size *= 0.95;
             }
             particles = particles.filter(p => p.life > 0);
+        }
+
+        function updateExplosions() {
+            for (const e of explosions) {
+                e.life--;
+            }
+            explosions = explosions.filter(e => e.life > 0);
         }
 
         // ==================== ОТРИСОВКА ====================
@@ -506,7 +750,6 @@
         }
 
         function drawBullet(b) {
-            // Вытянутый заострённый прямоугольник (как в фильмах)
             const angle = Math.atan2(b.vy, b.vx);
             const length = 14;
             const width = 4;
@@ -519,7 +762,6 @@
             ctx.shadowBlur = 8;
             ctx.shadowColor = b.color;
 
-            // Ромбовидная форма (заострённые концы)
             ctx.beginPath();
             ctx.moveTo(length / 2, 0);
             ctx.lineTo(0, width / 2);
@@ -529,6 +771,95 @@
             ctx.fill();
 
             ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        function drawGrenade(g) {
+            ctx.save();
+            ctx.translate(g.x, g.y);
+
+            if (g.type === 'emp') {
+                // Синий цилиндр с молнией
+                ctx.fillStyle = '#00aaff';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#00aaff';
+                ctx.fillRect(-6, -4, 12, 8);
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(-3, -2);
+                ctx.lineTo(0, 0);
+                ctx.lineTo(-2, 2);
+                ctx.lineTo(2, 0);
+                ctx.stroke();
+            } else {
+                // Серебристый шар
+                ctx.fillStyle = '#cccccc';
+                ctx.shadowBlur = 5;
+                ctx.shadowColor = '#ff0000';
+                ctx.beginPath();
+                ctx.arc(0, 0, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#ff0000';
+                ctx.beginPath();
+                ctx.arc(0, 0, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        function drawExplosion(e) {
+            const progress = 1 - (e.life / e.maxLife);
+            const currentRadius = e.radius * progress;
+
+            ctx.save();
+            ctx.translate(e.x, e.y);
+
+            if (e.type === 'emp') {
+                // Электрическое поле с молниями
+                ctx.strokeStyle = `rgba(0, 200, 255, ${e.life / e.maxLife})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Молнии
+                ctx.strokeStyle = `rgba(255, 255, 255, ${e.life / e.maxLife})`;
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2 + progress * 10;
+                    const length = currentRadius * (0.5 + Math.random() * 0.5);
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(Math.cos(angle) * length, Math.sin(angle) * length);
+                    ctx.stroke();
+                }
+            } else {
+                // Огонь и дым
+                const fireRadius = currentRadius * 0.6;
+                const smokeRadius = currentRadius;
+
+                // Дым
+                ctx.fillStyle = `rgba(100, 100, 100, ${e.life / e.maxLife * 0.5})`;
+                ctx.beginPath();
+                ctx.arc(0, 0, smokeRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Огонь
+                ctx.fillStyle = `rgba(255, 100, 0, ${e.life / e.maxLife})`;
+                ctx.beginPath();
+                ctx.arc(0, 0, fireRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Яркий центр
+                ctx.fillStyle = `rgba(255, 255, 200, ${e.life / e.maxLife})`;
+                ctx.beginPath();
+                ctx.arc(0, 0, fireRadius * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
             ctx.restore();
         }
 
@@ -542,28 +873,23 @@
             ctx.translate(-canvas.width / 2, -canvas.height / 2);
             ctx.translate(-cameraX, -cameraY);
 
-            // Карта
             ctx.fillStyle = '#1a2332';
             ctx.fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
             ctx.strokeStyle = '#2a3b4c';
             ctx.lineWidth = 4;
             ctx.strokeRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
 
-            // Базы
             const bs = 180;
             drawBuilding(bases.cis.x - bs / 2, bases.cis.y - bs / 2, bs, bs, bases.cis.color, bases.cis.name);
             drawBuilding(bases.republic.x - bs / 2, bases.republic.y - bs / 2, bs, bs, bases.republic.color, bases.republic.name);
 
-            // Точка захвата
             drawCapturePoint();
 
-            // Юниты
             for (const u of units) u.draw();
-
-            // Пули
             for (const b of bullets) drawBullet(b);
+            for (const g of grenades) drawGrenade(g);
+            for (const e of explosions) drawExplosion(e);
 
-            // Частицы
             for (const p of particles) {
                 ctx.globalAlpha = p.life / 35;
                 ctx.fillStyle = p.color;
@@ -580,7 +906,9 @@
         function update() {
             for (const u of units) u.update();
             updateBullets();
+            updateGrenades();
             updateParticles();
+            updateExplosions();
             capturePoint.pulsePhase += 0.05;
         }
 
