@@ -18,27 +18,35 @@ const CLONE_CONFIG = {
     boltColor: '#4a9eff', boltSpeed: 8, medicHealRate: 0.02, baseHealRate: 0.01, medicFireChance: 0.3
 };
 
-// ==================== ПАРАМЕТРЫ ДРОИДОВ B1 ====================
+// ==================== ПАРАМЕТРЫ ДРОИДА B1 (обычный) ====================
 const DROID_CONFIG = {
     side: 'cis', color: '#c9a96e', shape: 'oval', radius: 6, hp: 1, speed: 1.0,
     accuracy: 0.40, fireRate: 50, detectRange: 200, fireRange: 180, respawnDelay: 120,
     boltColor: '#ff3030', boltSpeed: 6
 };
 
+// ==================== ПАРАМЕТРЫ ДРОИДА-КОМАНДИРА B1 ====================
+const COMMANDER_DROID_CONFIG = {
+    side: 'cis', color: '#c9a96e', shape: 'oval', radius: 7, hp: 2, speed: 0.9,
+    accuracy: 0.60, fireRate: 45, detectRange: 250, fireRange: 200, respawnDelay: 120,
+    boltColor: '#ff3030', boltSpeed: 6,
+    diamondColor: '#ffcc00' // Жёлтый ромб
+};
+
 // ==================== НАСТРОЙКИ ОТРЯДОВ (SQUADS) ====================
 const SQUAD_CONFIG = {
     maxSize: 32,
-    cols: 4,
-    rows: 8,
-    colSpacing: 20,
-    rowSpacing: 20,
+    cols: 8,  // Широкая формация: 8 колонок
+    rows: 4,  // 4 ряда
+    colSpacing: 18,
+    rowSpacing: 18,
     attackThresholdOriginal: 0.70,
     attackThresholdSuccessor: 0.50,
-    // Ужесточили допуски, чтобы строй не разваливался в кашу
-    formationToleranceOriginal: 25, 
-    formationToleranceSuccessor: 40, 
-    commanderOutline: '#ffcc00',
-    commanderAntenna: '#ffcc00'
+    formationToleranceOriginal: 25,
+    formationToleranceSuccessor: 40,
+    // Командир в последнем ряду (row=3), центр (col=3 или 4)
+    commanderRow: 3,
+    commanderCol: 3
 };
 
 // ==================== ПАРАМЕТРЫ ГРАНАТ, ПУЛЬ, ЧАСТИЦ, ВЗРЫВОВ, КАМЕРЫ ====================
