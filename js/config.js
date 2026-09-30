@@ -4,133 +4,58 @@ const MAP_HEIGHT = 2400;
 
 // ==================== БАЗЫ ====================
 const bases = {
-    republic: { 
-        x: 3400, 
-        y: 1200, 
-        color: '#ff3030', 
-        name: 'РЕСПУБЛИКА',
-        buildingSize: 180
-    },
-    cis: { 
-        x: 600, 
-        y: 1200, 
-        color: '#4a9eff', 
-        name: 'КНС',
-        buildingSize: 180
-    }
+    republic: { x: 3400, y: 1200, color: '#ff3030', name: 'РЕСПУБЛИКА', buildingSize: 180 },
+    cis: { x: 600, y: 1200, color: '#4a9eff', name: 'КНС', buildingSize: 180 }
 };
 
 // ==================== ТОЧКА ЗАХВАТА ====================
-const capturePoint = {
-    x: 2000,
-    y: 1200,
-    radius: 80
-};
+const capturePoint = { x: 2000, y: 1200, radius: 80, pulsePhase: 0 };
 
 // ==================== ПАРАМЕТРЫ КЛОНОВ ====================
 const CLONE_CONFIG = {
-    side: 'republic',
-    color: '#ffffff',
-    shape: 'circle',
-    radius: 7,
-    hp: 3,
-    speed: 1.8,
-    accuracy: 0.85,
-    fireRate: 40,           // кадров между выстрелами
-    detectRange: 250,       // радиус обнаружения врага
-    fireRange: 220,         // радиус эффективной стрельбы
-    respawnDelay: 180,      // 3 секунды при 60fps
-    boltColor: '#4a9eff',
-    boltSpeed: 8,
-    medicRatio: 1 / 9,      // 1 медик на 9 клонов
-    medicHealRate: 0.02,    // HP за кадр при лечении
-    baseHealRate: 0.01,     // HP за кадр на базе
-    medicFireChance: 0.3    // шанс выстрела для медика
+    side: 'republic', color: '#ffffff', shape: 'circle', radius: 7, hp: 3, speed: 1.8,
+    accuracy: 0.85, fireRate: 40, detectRange: 250, fireRange: 220, respawnDelay: 180,
+    boltColor: '#4a9eff', boltSpeed: 8, medicHealRate: 0.02, baseHealRate: 0.01, medicFireChance: 0.3
 };
 
 // ==================== ПАРАМЕТРЫ ДРОИДОВ B1 ====================
 const DROID_CONFIG = {
-    side: 'cis',
-    color: '#c9a96e',       // жёлто-коричневый/кожаный
-    shape: 'oval',
-    radius: 6,
-    hp: 1,
-    speed: 1.0,
-    accuracy: 0.40,
-    fireRate: 50,
-    detectRange: 200,
-    fireRange: 180,
-    respawnDelay: 120,      // 2 секунды
-    boltColor: '#ff3030',
-    boltSpeed: 6,
-    formation: {
-        cols: 4,
-        rows: 8,
-        colSpacing: 20,
-        rowSpacing: 20,
-        formationThreshold: 30, // дистанция для считания "в строю"
-        requiredPercentage: 0.70 // 70% в строю для начала атаки
-    }
+    side: 'cis', color: '#c9a96e', shape: 'oval', radius: 6, hp: 1, speed: 1.0,
+    accuracy: 0.40, fireRate: 50, detectRange: 200, fireRange: 180, respawnDelay: 120,
+    boltColor: '#ff3030', boltSpeed: 6
+};
+
+// ==================== НАСТРОЙКИ ОТРЯДОВ (SQUADS) ====================
+const SQUAD_CONFIG = {
+    maxSize: 32,
+    cols: 4,
+    rows: 8,
+    colSpacing: 20,
+    rowSpacing: 20,
+    // Оригинальный командир ждёт 70% состава
+    attackThresholdOriginal: 0.70, 
+    // Преемник начинает паниковать и атакует при 50%
+    attackThresholdSuccessor: 0.50, 
+    // Допустимое отклонение от строя (px)
+    formationToleranceOriginal: 30,
+    formationToleranceSuccessor: 50,
+    // Визуал командира
+    commanderOutline: '#ffcc00', // Жёлтая обводка
+    commanderAntenna: '#ffcc00'  // Жёлтая антенна
 };
 
 // ==================== ПАРАМЕТРЫ ГРАНАТ ====================
 const GRENADE_CONFIG = {
-    emp: {
-        count: 3,           // количество на юнита
-        radius: 100,        // радиус поражения
-        flightSpeed: 4,
-        flightTime: 90,     // кадров полёта
-        color: '#00aaff',
-        requiredEnemies: 5, // минимум врагов для броска
-        cooldown: 180       // задержка между бросками
-    },
-    thermal: {
-        count: 2,
-        radius: 80,
-        flightSpeed: 4,
-        flightTime: 90,
-        color: '#ff6600',
-        damage: 2
-    },
-    checkRadius: 200,       // радиус проверки "не летит ли уже граната"
-    empChance: 0.6          // шанс бросить EMP вместо термальной
+    emp: { count: 3, radius: 100, flightSpeed: 4, flightTime: 90, color: '#00aaff', requiredEnemies: 5, cooldown: 180 },
+    thermal: { count: 2, radius: 80, flightSpeed: 4, flightTime: 90, color: '#ff6600', damage: 2 },
+    checkRadius: 200, empChance: 0.6
 };
 
-// ==================== ПАРАМЕТРЫ ПУЛЬ ====================
-const BULLET_CONFIG = {
-    life: 60,               // время жизни пули в кадрах
-    missSpread: 30,         // разброс при промахе (px)
-    hitRadius: 3            // дополнительный радиус попадания
-};
-
-// ==================== ПАРАМЕТРЫ ЧАСТИЦ ====================
-const PARTICLE_CONFIG = {
-    explosionCount: 8,
-    explosionLife: 35,
-    deathCount: 15,
-    sizeMin: 2,
-    sizeMax: 5,
-    speedMax: 4
-};
-
-// ==================== ПАРАМЕТРЫ ВЗРЫВОВ ====================
+// ==================== ПАРАМЕТРЫ ПУЛЬ, ЧАСТИЦ, ВЗРЫВОВ, КАМЕРЫ ====================
+const BULLET_CONFIG = { life: 60, missSpread: 30, hitRadius: 3 };
+const PARTICLE_CONFIG = { explosionCount: 8, explosionLife: 35, deathCount: 15, sizeMin: 2, sizeMax: 5, speedMax: 4 };
 const EXPLOSION_CONFIG = {
-    emp: {
-        life: 60,
-        color: '0, 200, 255',
-        lightningCount: 8
-    },
-    thermal: {
-        life: 90,
-        fireColor: '255, 100, 0',
-        smokeColor: '100, 100, 100',
-        coreColor: '255, 255, 200'
-    }
+    emp: { life: 60, color: '0, 200, 255', lightningCount: 8 },
+    thermal: { life: 90, fireColor: '255, 100, 0', smokeColor: '100, 100, 100', coreColor: '255, 255, 200' }
 };
-
-// ==================== ПАРАМЕТРЫ КАМЕРЫ ====================
-const CAMERA_CONFIG = {
-    minZoom: 0.3,
-    maxZoom: 3,
-    zoomStep: 0.1
-};
+const CAMERA_CONFIG = { minZoom: 0.3, maxZoom: 3, zoomStep: 0.1 };
