@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Kamino Simulation - Neon Grid</title>
+    <title>Kamino Simulation</title>
     <style>
         body {
             margin: 0;
             padding: 0;
-            background: #050a14;
+            background: #1a2332;
             overflow: hidden;
             touch-action: none;
         }
@@ -24,64 +24,103 @@
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
 
-        // НАСТРОЙКИ СЕТКИ
-        const TILE_SIZE = 30;  // Размер плиты
-        const GAP_SIZE = 4;    // Ширина светящейся линии
+        // Размер карты (большой!)
+        const MAP_WIDTH = 4000;
+        const MAP_HEIGHT = 4000;
+
+        // Позиция камеры
+        let cameraX = MAP_WIDTH / 2 - window.innerWidth / 2;
+        let cameraY = MAP_HEIGHT / 2 - window.innerHeight / 2;
+
+        // Для перемещения пальцем
+        let isDragging = false;
+        let lastX = 0;
+        let lastY = 0;
 
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-            drawMap();
         }
 
         function drawMap() {
-            // 1. Рисуем темный фон (основа для свечения)
-            ctx.fillStyle = '#050a14'; 
+            // Очистка экрана
+            ctx.fillStyle = '#1a2332';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Вычисляем сетку
-            const cols = Math.ceil(canvas.width / (TILE_SIZE + GAP_SIZE));
-            const rows = Math.ceil(canvas.height / (TILE_SIZE + GAP_SIZE));
+            // Сохраняем контекст и смещаем камеру
+            ctx.save();
+            ctx.translate(-cameraX, -cameraY);
 
-            // 2. Рисуем серые плиты (с небольшим отступом, чтобы оставить место под линии)
-            ctx.fillStyle = '#2a3b4c'; 
-            
-            for (let i = 0; i < cols; i++) {
-                for (let j = 0; j < rows; j++) {
-                    const x = i * (TILE_SIZE + GAP_SIZE) + GAP_SIZE / 2;
-                    const y = j * (TILE_SIZE + GAP_SIZE) + GAP_SIZE / 2;
-                    
-                    // Рисуем плиту чуть меньше реального размера, чтобы линии были четкими
-                    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
-                }
-            }
+            // Рисуем большую карту
+            ctx.fillStyle = '#1a2332';
+            ctx.fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
 
-            // 3. Рисуем СВЕТЯЩИЕСЯ ЛИНИИ
-            // Включаем эффект свечения (neon glow)
-            ctx.shadowBlur = 15;       // Сила размытия (чем больше, тем шире ореол)
-            ctx.shadowColor = '#ffffff'; // Цвет свечения
-            ctx.fillStyle = '#ffffff';   // Цвет самой линии (белый)
+            // Граница карты (чтобы видеть края)
+            ctx.strokeStyle = '#2a3b4c';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
 
-            // Вертикальные линии
-            for (let i = 0; i <= cols; i++) {
-                const x = i * (TILE_SIZE + GAP_SIZE);
-                ctx.fillRect(x, 0, GAP_SIZE, canvas.height);
-            }
-
-            // Горизонтальные линии
-            for (let j = 0; j <= rows; j++) {
-                const y = j * (TILE_SIZE + GAP_SIZE);
-                ctx.fillRect(0, y, canvas.width, GAP_SIZE);
-            }
-
-            // Сбрасываем эффекты, чтобы они не влияли на будущие объекты (юнитов)
-            ctx.shadowBlur = 0;
-            ctx.shadowColor = 'transparent';
+            ctx.restore();
         }
+
+        // Управление камерой (перемещение пальцем)
+        canvas.addEventListener('touchstart', (e) => {
+            isDragging = true;
+            lastX = e.touches[0].clientX;
+            lastY = e.touches[0].clientY;
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            
+            const currentX = e.touches[0].clientX;
+            const currentY = e.touches[0].clientY;
+            
+            cameraX -= (currentX - lastX);
+            cameraY -= (currentY - lastY);
+            
+            lastX = currentX;
+            lastY = currentY;
+            
+            drawMap();
+        });
+
+        canvas.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+
+        // Для мыши (тестирование на ПК)
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            lastX = e.clientX;
+            lastY = e.clientY;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            cameraX -= (e.clientX - lastX);
+            cameraY -= (e.clientY - lastY);
+            
+            lastX = e.clientX;
+            lastY = e.clientY;
+            
+            drawMap();
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            isDragging = false;
+        });
 
         // Запуск
         window.addEventListener('resize', resize);
-        resize(); 
+        resize();
+        drawMap();
 
     </script>
 </body>
