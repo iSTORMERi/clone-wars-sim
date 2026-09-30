@@ -14,37 +14,36 @@ const capturePoint = { x: 2000, y: 1200, radius: 80, pulsePhase: 0 };
 // ==================== ПАРАМЕТРЫ КЛОНОВ ====================
 const CLONE_CONFIG = {
     side: 'republic', color: '#ffffff', shape: 'circle', radius: 7, hp: 3, speed: 1.8,
-    accuracy: 0.85, fireRate: 40, detectRange: 250, fireRange: 220, respawnDelay: 180,
+    accuracy: 0.85, fireRate: 40, detectRange: 350, fireRange: 320, respawnDelay: 180,
     boltColor: '#4a9eff', boltSpeed: 8, medicHealRate: 0.02, baseHealRate: 0.01, medicFireChance: 0.3
 };
 
 // ==================== ПАРАМЕТРЫ ДРОИДА B1 (обычный) ====================
 const DROID_CONFIG = {
     side: 'cis', color: '#c9a96e', shape: 'oval', radius: 6, hp: 1, speed: 1.0,
-    accuracy: 0.40, fireRate: 50, detectRange: 200, fireRange: 180, respawnDelay: 120,
+    accuracy: 0.40, fireRate: 50, detectRange: 340, fireRange: 310, respawnDelay: 120,
     boltColor: '#ff3030', boltSpeed: 6
 };
 
 // ==================== ПАРАМЕТРЫ ДРОИДА-КОМАНДИРА B1 ====================
 const COMMANDER_DROID_CONFIG = {
     side: 'cis', color: '#c9a96e', shape: 'oval', radius: 7, hp: 2, speed: 0.9,
-    accuracy: 0.60, fireRate: 45, detectRange: 250, fireRange: 200, respawnDelay: 120,
+    accuracy: 0.60, fireRate: 45, detectRange: 340, fireRange: 310, respawnDelay: 120,
     boltColor: '#ff3030', boltSpeed: 6,
-    diamondColor: '#ffcc00' // Жёлтый ромб
+    diamondColor: '#ffcc00'
 };
 
 // ==================== НАСТРОЙКИ ОТРЯДОВ (SQUADS) ====================
 const SQUAD_CONFIG = {
     maxSize: 32,
-    cols: 8,  // Широкая формация: 8 колонок
-    rows: 4,  // 4 ряда
+    cols: 8,
+    rows: 4,
     colSpacing: 18,
     rowSpacing: 18,
     attackThresholdOriginal: 0.70,
     attackThresholdSuccessor: 0.50,
     formationToleranceOriginal: 25,
     formationToleranceSuccessor: 40,
-    // Командир в последнем ряду (row=3), центр (col=3 или 4)
     commanderRow: 3,
     commanderCol: 3
 };
