@@ -32,26 +32,21 @@ const SQUAD_CONFIG = {
     rows: 8,
     colSpacing: 20,
     rowSpacing: 20,
-    // Оригинальный командир ждёт 70% состава
     attackThresholdOriginal: 0.70,
-    // Преемник начинает паниковать и атакует при 50%
     attackThresholdSuccessor: 0.50,
-    // Допустимое отклонение от строя (px)
-    formationToleranceOriginal: 30,
-    formationToleranceSuccessor: 50,
-    // Визуал командира
-    commanderOutline: '#ffcc00', // Жёлтая обводка
-    commanderAntenna: '#ffcc00'  // Жёлтая антенна
+    // Ужесточили допуски, чтобы строй не разваливался в кашу
+    formationToleranceOriginal: 25, 
+    formationToleranceSuccessor: 40, 
+    commanderOutline: '#ffcc00',
+    commanderAntenna: '#ffcc00'
 };
 
-// ==================== ПАРАМЕТРЫ ГРАНАТ ====================
+// ==================== ПАРАМЕТРЫ ГРАНАТ, ПУЛЬ, ЧАСТИЦ, ВЗРЫВОВ, КАМЕРЫ ====================
 const GRENADE_CONFIG = {
     emp: { count: 3, radius: 100, flightSpeed: 4, flightTime: 90, color: '#00aaff', requiredEnemies: 5, cooldown: 180 },
     thermal: { count: 2, radius: 80, flightSpeed: 4, flightTime: 90, color: '#ff6600', damage: 2 },
     checkRadius: 200, empChance: 0.6
 };
-
-// ==================== ПАРАМЕТРЫ ПУЛЬ, ЧАСТИЦ, ВЗРЫВОВ, КАМЕРЫ ====================
 const BULLET_CONFIG = { life: 60, missSpread: 30, hitRadius: 3 };
 const PARTICLE_CONFIG = { explosionCount: 8, explosionLife: 35, deathCount: 15, sizeMin: 2, sizeMax: 5, speedMax: 4 };
 const EXPLOSION_CONFIG = {
