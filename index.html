@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Kamino Simulation - Capture Point</title>
+    <title>Clone Wars Simulation</title>
     <style>
         body {
             margin: 0;
@@ -22,57 +22,75 @@
             color: white;
             font-family: Arial, sans-serif;
             font-size: 14px;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 14px;
             border-radius: 6px;
             pointer-events: none;
+            line-height: 1.6;
         }
+        #ui .rep { color: #ff6666; }
+        #ui .cis { color: #66aaff; }
     </style>
 </head>
 <body>
     <canvas id="game"></canvas>
-    <div id="ui">Зум: <span id="zoomLevel">100%</span></div>
+    <div id="ui">
+        <div><span class="rep">🔴 Республика:</span> <span id="repCount">0</span>/9</div>
+        <div><span class="cis">🔵 КНС:</span> <span id="cisCount">0</span>/32</div>
+        <div style="margin-top:6px; font-size:12px; opacity:0.7;">Зум: <span id="zoomLevel">100%</span></div>
+    </div>
 
     <script>
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
-        const zoomDisplay = document.getElementById('zoomLevel');
 
-        // Размер карты (увеличена в 2 раза)
+        // ==================== НАСТРОЙКИ КАРТЫ ====================
         const MAP_WIDTH = 4000;
         const MAP_HEIGHT = 2400;
 
-        // Позиция камеры
         let cameraX = MAP_WIDTH / 2 - window.innerWidth / 2;
         let cameraY = MAP_HEIGHT / 2 - window.innerHeight / 2;
         let zoom = 1;
 
-        // Для перемещения пальцем
-        let isDragging = false;
-        let lastX = 0;
-        let lastY = 0;
-
-        // Для зума (pinch)
-        let initialPinchDistance = 0;
-        let initialZoom = 1;
-
-        // Аванпосты (позиции пересчитаны для новой карты)
-        const outposts = {
-            republic: {
-                x: 3200,
-                y: 1200,
-                color: '#ff3030',
-                name: 'РЕСПУБЛИКА'
-            },
-            cis: {
-                x: 800,
-                y: 1200,
-                color: '#4a9eff',
-                name: 'КНС'
-            }
+        // ==================== НАСТРОЙКИ ЮНИТОВ ====================
+        const CLONE_CONFIG = {
+            side: 'republic',
+            color: '#ffffff',
+            shape: 'circle',
+            radius: 7,
+            hp: 3,
+            speed: 1.8,
+            accuracy: 0.85,
+            fireRate: 40,
+            detectRange: 250,
+            fireRange: 220,
+            respawnDelay: 180, // 3 секунды при 60fps
+            boltColor: '#4a9eff',
+            boltSpeed: 8
         };
 
-        // Точка захвата в центре
+        const DROID_CONFIG = {
+            side: 'cis',
+            color: '#c9a96e', // жёлто-коричневый/кожаный
+            shape: 'oval',
+            radius: 6,
+            hp: 1,
+            speed: 1.0,
+            accuracy: 0.40,
+            fireRate: 50,
+            detectRange: 200,
+            fireRange: 180,
+            respawnDelay: 120, // 2 секунды
+            boltColor: '#ff3030',
+            boltSpeed: 6
+        };
+
+        // ==================== БАЗЫ И ТОЧКА ЗАХВАТА ====================
+        const bases = {
+            republic: { x: 3400, y: 1200, color: '#ff3030', name: 'РЕСПУБЛИКА' },
+            cis: { x: 600, y: 1200, color: '#4a9eff', name: 'КНС' }
+        };
+
         const capturePoint = {
             x: 2000,
             y: 1200,
@@ -80,31 +98,375 @@
             pulsePhase: 0
         };
 
-        function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            drawMap();
+        // ==================== ИГРОВЫЕ ОБЪЕКТЫ ====================
+        let units = [];
+        let bullets = [];
+        let particles = [];
+
+        // ==================== КЛАСС ЮНИТА ====================
+        class Unit {
+            constructor(config, x, y, formationOffset = null) {
+                this.side = config.side;
+                this.color = config.color;
+                this.shape = config.shape;
+                this.radius = config.radius;
+                this.maxHp = config.hp;
+                this.hp = config.hp;
+                this.speed = config.speed;
+                this.accuracy = config.accuracy;
+                this.fireRate = config.fireRate;
+                this.detectRange = config.detectRange;
+                this.fireRange = config.fireRange;
+                this.respawnDelay = config.respawnDelay;
+                this.boltColor = config.boltColor;
+                this.boltSpeed = config.boltSpeed;
+                
+                this.x = x;
+                this.y = y;
+                this.formationOffset = formationOffset; // для дроидов — смещение в формации
+                this.cooldown = Math.random() * config.fireRate;
+                this.alive = true;
+                this.respawnTimer = 0;
+                this.target = null;
+                
+                // Для клонов — случайное отклонение от курса
+                this.wanderAngle = Math.random() * Math.PI * 2;
+                this.wanderTimer = 0;
+            }
+
+            respawn(baseX, baseY) {
+                this.hp = this.maxHp;
+                this.alive = true;
+                this.cooldown = Math.random() * this.fireRate;
+                // Спавн с небольшим разбросом вокруг базы
+                this.x = baseX + (Math.random() - 0.5) * 100;
+                this.y = baseY + (Math.random() - 0.5) * 100;
+            }
+
+            findNearestEnemy() {
+                let nearest = null;
+                let minDist = Infinity;
+                for (const u of units) {
+                    if (u.alive && u.side !== this.side) {
+                        const d = Math.hypot(u.x - this.x, u.y - this.y);
+                        if (d < minDist) {
+                            minDist = d;
+                            nearest = u;
+                        }
+                    }
+                }
+                return { unit: nearest, dist: minDist };
+            }
+
+            update() {
+                if (!this.alive) {
+                    this.respawnTimer--;
+                    if (this.respawnTimer <= 0) {
+                        const base = bases[this.side];
+                        this.respawn(base.x, base.y);
+                    }
+                    return;
+                }
+
+                const { unit: enemy, dist } = this.findNearestEnemy();
+                this.target = enemy;
+
+                if (this.side === 'republic') {
+                    this.updateCloneBehavior(enemy, dist);
+                } else {
+                    this.updateDroidBehavior(enemy, dist);
+                }
+
+                // Ограничение границами карты
+                this.x = Math.max(this.radius, Math.min(MAP_WIDTH - this.radius, this.x));
+                this.y = Math.max(this.radius, Math.min(MAP_HEIGHT - this.radius, this.y));
+
+                // Стрельба
+                this.cooldown--;
+                if (this.cooldown <= 0 && enemy && dist < this.fireRange) {
+                    this.shoot(enemy);
+                    this.cooldown = this.fireRate + Math.random() * 20;
+                }
+            }
+
+            updateCloneBehavior(enemy, dist) {
+                // Отступление при низком HP
+                if (this.hp <= 1) {
+                    const base = bases.republic;
+                    const dx = base.x - this.x;
+                    const dy = base.y - this.y;
+                    const len = Math.hypot(dx, dy);
+                    if (len > 50) {
+                        this.x += (dx / len) * this.speed;
+                        this.y += (dy / len) * this.speed;
+                    }
+                    return;
+                }
+
+                // Движение к точке захвата с зигзагом
+                const tx = capturePoint.x;
+                const ty = capturePoint.y;
+                const dx = tx - this.x;
+                const dy = ty - this.y;
+                const len = Math.hypot(dx, dy);
+
+                if (len > 30) {
+                    // Зигзаг: добавляем перпендикулярное отклонение
+                    this.wanderTimer--;
+                    if (this.wanderTimer <= 0) {
+                        this.wanderAngle = (Math.random() - 0.5) * 1.5;
+                        this.wanderTimer = 30 + Math.random() * 60;
+                    }
+
+                    const perpX = -dy / len;
+                    const perpY = dx / len;
+                    const wanderStrength = 0.4;
+
+                    this.x += ((dx / len) + perpX * Math.sin(this.wanderAngle) * wanderStrength) * this.speed;
+                    this.y += ((dy / len) + perpY * Math.sin(this.wanderAngle) * wanderStrength) * this.speed;
+                }
+
+                // Подстраховка: отталкивание от союзников (не кучковаться)
+                for (const u of units) {
+                    if (u.alive && u.side === this.side && u !== this) {
+                        const d = Math.hypot(u.x - this.x, u.y - this.y);
+                        if (d < 25 && d > 0) {
+                            const pushX = (this.x - u.x) / d;
+                            const pushY = (this.y - u.y) / d;
+                            this.x += pushX * 0.5;
+                            this.y += pushY * 0.5;
+                        }
+                    }
+                }
+            }
+
+            updateDroidBehavior(enemy, dist) {
+                // Дроиды держат формацию и идут к точке захвата
+                const tx = capturePoint.x;
+                const ty = capturePoint.y;
+
+                // Целевая позиция с учётом формации
+                let targetX = tx;
+                let targetY = ty;
+                if (this.formationOffset) {
+                    targetX += this.formationOffset.x;
+                    targetY += this.formationOffset.y;
+                }
+
+                const dx = targetX - this.x;
+                const dy = targetY - this.y;
+                const len = Math.hypot(dx, dy);
+
+                if (len > 20) {
+                    // Дроиды идут строго по прямой, без манёвров
+                    this.x += (dx / len) * this.speed;
+                    this.y += (dy / len) * this.speed;
+                }
+
+                // Возврат в строй: притяжение к идеальной позиции формации
+                if (this.formationOffset && len <= 20) {
+                    const idealX = tx + this.formationOffset.x;
+                    const idealY = ty + this.formationOffset.y;
+                    const idX = idealX - this.x;
+                    const idY = idealY - this.y;
+                    const idLen = Math.hypot(idX, idY);
+                    if (idLen > 5) {
+                        this.x += (idX / idLen) * this.speed * 0.3;
+                        this.y += (idY / idLen) * this.speed * 0.3;
+                    }
+                }
+            }
+
+            shoot(enemy) {
+                // Проверка точности
+                if (Math.random() > this.accuracy) {
+                    // Промах — болт летит мимо
+                    const spread = 30; // разброс в пикселях
+                    const targetX = enemy.x + (Math.random() - 0.5) * spread;
+                    const targetY = enemy.y + (Math.random() - 0.5) * spread;
+                    const dx = targetX - this.x;
+                    const dy = targetY - this.y;
+                    const len = Math.hypot(dx, dy);
+                    bullets.push({
+                        x: this.x, y: this.y,
+                        vx: (dx / len) * this.boltSpeed,
+                        vy: (dy / len) * this.boltSpeed,
+                        side: this.side,
+                        color: this.boltColor,
+                        life: 60
+                    });
+                    return;
+                }
+
+                // Попадание (целимся точно)
+                const dx = enemy.x - this.x;
+                const dy = enemy.y - this.y;
+                const len = Math.hypot(dx, dy);
+                bullets.push({
+                    x: this.x, y: this.y,
+                    vx: (dx / len) * this.boltSpeed,
+                    vy: (dy / len) * this.boltSpeed,
+                    side: this.side,
+                    color: this.boltColor,
+                    life: 60,
+                    target: enemy
+                });
+            }
+
+            draw() {
+                if (!this.alive) return;
+
+                // Тень
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y + this.radius, this.radius, this.radius * 0.4, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                if (this.shape === 'circle') {
+                    // Клон — белый кружок
+                    ctx.fillStyle = this.color;
+                    ctx.strokeStyle = '#cccccc';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                } else {
+                    // Дроид — овал (вытянутый по вертикали)
+                    ctx.fillStyle = this.color;
+                    ctx.strokeStyle = '#8b7355';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.ellipse(this.x, this.y, this.radius * 0.7, this.radius * 1.4, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+
+                // Полоска HP (только если ранен)
+                if (this.hp < this.maxHp) {
+                    const bw = 14, bh = 2;
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(this.x - bw / 2, this.y - this.radius - 8, bw, bh);
+                    ctx.fillStyle = this.hp > 1 ? '#0f0' : '#f00';
+                    ctx.fillRect(this.x - bw / 2, this.y - this.radius - 8, bw * (this.hp / this.maxHp), bh);
+                }
+            }
         }
 
+        // ==================== СОЗДАНИЕ АРМИЙ ====================
+        function createArmies() {
+            units = [];
+
+            // Республика: 9 клонов, спавн на базе
+            const repBase = bases.republic;
+            for (let i = 0; i < 9; i++) {
+                const angle = (i / 9) * Math.PI * 2;
+                const x = repBase.x + Math.cos(angle) * 60;
+                const y = repBase.y + Math.sin(angle) * 60;
+                units.push(new Unit(CLONE_CONFIG, x, y));
+            }
+
+            // КНС: 32 дроида, формация 4 колонки × 8 рядов
+            const cisBase = bases.cis;
+            const colSpacing = 20;
+            const rowSpacing = 20;
+            const cols = 4;
+            const rows = 8;
+            const startX = cisBase.x - ((cols - 1) * colSpacing) / 2;
+            const startY = cisBase.y - ((rows - 1) * rowSpacing) / 2;
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const x = startX + col * colSpacing;
+                    const y = startY + row * rowSpacing;
+                    // Смещение в формации относительно точки захвата
+                    const formationOffset = {
+                        x: (col - (cols - 1) / 2) * colSpacing,
+                        y: (row - (rows - 1) / 2) * rowSpacing
+                    };
+                    units.push(new Unit(DROID_CONFIG, x, y, formationOffset));
+                }
+            }
+        }
+
+        // ==================== ОБНОВЛЕНИЕ ПУЛЬ ====================
+        function updateBullets() {
+            for (const b of bullets) {
+                b.x += b.vx;
+                b.y += b.vy;
+                b.life--;
+
+                // Проверка попаданий
+                if (b.target && b.target.alive) {
+                    const d = Math.hypot(b.target.x - b.x, b.target.y - b.y);
+                    if (d < b.target.radius + 3) {
+                        b.target.hp--;
+                        b.life = 0;
+                        createExplosion(b.x, b.y, b.color);
+                        if (b.target.hp <= 0) {
+                            b.target.alive = false;
+                            b.target.respawnTimer = b.target.respawnDelay;
+                            createExplosion(b.target.x, b.target.y, b.target.color, 15);
+                        }
+                    }
+                } else {
+                    // Если цель мертва или болт летел мимо — проверяем всех
+                    for (const u of units) {
+                        if (u.alive && u.side !== b.side) {
+                            const d = Math.hypot(u.x - b.x, u.y - b.y);
+                            if (d < u.radius + 3) {
+                                u.hp--;
+                                b.life = 0;
+                                createExplosion(b.x, b.y, b.color);
+                                if (u.hp <= 0) {
+                                    u.alive = false;
+                                    u.respawnTimer = u.respawnDelay;
+                                    createExplosion(u.x, u.y, u.color, 15);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            bullets = bullets.filter(b => b.life > 0 && b.x > 0 && b.x < MAP_WIDTH && b.y > 0 && b.y < MAP_HEIGHT);
+        }
+
+        // ==================== ЧАСТИЦЫ ====================
+        function createExplosion(x, y, color, count = 8) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x, y,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    life: 20 + Math.random() * 15,
+                    color,
+                    size: 2 + Math.random() * 3
+                });
+            }
+        }
+
+        function updateParticles() {
+            for (const p of particles) {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+                p.size *= 0.95;
+            }
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        // ==================== ОТРИСОВКА ====================
         function drawBuilding(x, y, width, height, color, name) {
-            // Тень здания
             ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
             ctx.fillRect(x + 8, y + 8, width, height);
-
-            // Основное здание
             ctx.fillStyle = color;
             ctx.fillRect(x, y, width, height);
-
-            // Обводка
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 3;
             ctx.strokeRect(x, y, width, height);
-
-            // Внутренняя деталь
             ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
             ctx.fillRect(x + 15, y + 15, width - 30, height - 30);
-
-            // Название
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 20px Arial';
             ctx.textAlign = 'center';
@@ -113,100 +475,137 @@
 
         function drawCapturePoint() {
             const { x, y, radius, pulsePhase } = capturePoint;
-            
-            // Пульсирующее свечение
             const pulseSize = Math.sin(pulsePhase) * 10;
-            
-            // Внешнее кольцо
+
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.arc(x, y, radius + 20 + pulseSize, 0, Math.PI * 2);
             ctx.stroke();
 
-            // Основное кольцо
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 4;
             ctx.beginPath();
             ctx.arc(x, y, radius, 0, Math.PI * 2);
             ctx.stroke();
 
-            // Заполнение
             ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
             ctx.beginPath();
             ctx.arc(x, y, radius, 0, Math.PI * 2);
             ctx.fill();
 
-            // Центральная точка
             ctx.fillStyle = '#ffffff';
             ctx.beginPath();
             ctx.arc(x, y, 15, 0, Math.PI * 2);
             ctx.fill();
 
-            // Надпись
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 24px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('ЗАХВАТ', x, y - radius - 30);
         }
 
+        function drawBullet(b) {
+            // Вытянутый заострённый прямоугольник (как в фильмах)
+            const angle = Math.atan2(b.vy, b.vx);
+            const length = 14;
+            const width = 4;
+
+            ctx.save();
+            ctx.translate(b.x, b.y);
+            ctx.rotate(angle);
+
+            ctx.fillStyle = b.color;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = b.color;
+
+            // Ромбовидная форма (заострённые концы)
+            ctx.beginPath();
+            ctx.moveTo(length / 2, 0);
+            ctx.lineTo(0, width / 2);
+            ctx.lineTo(-length / 2, 0);
+            ctx.lineTo(0, -width / 2);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
         function drawMap() {
-            // Очистка экрана
             ctx.fillStyle = '#1a2332';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             ctx.save();
-            
-            // Применяем зум и камеру
             ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.scale(zoom, zoom);
             ctx.translate(-canvas.width / 2, -canvas.height / 2);
             ctx.translate(-cameraX, -cameraY);
 
-            // Рисуем карту
+            // Карта
             ctx.fillStyle = '#1a2332';
             ctx.fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
-
-            // Граница карты
             ctx.strokeStyle = '#2a3b4c';
             ctx.lineWidth = 4;
             ctx.strokeRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
 
-            // Рисуем аванпосты
-            const buildingSize = 180;
-            
-            drawBuilding(
-                outposts.cis.x - buildingSize / 2,
-                outposts.cis.y - buildingSize / 2,
-                buildingSize,
-                buildingSize,
-                outposts.cis.color,
-                outposts.cis.name
-            );
+            // Базы
+            const bs = 180;
+            drawBuilding(bases.cis.x - bs / 2, bases.cis.y - bs / 2, bs, bs, bases.cis.color, bases.cis.name);
+            drawBuilding(bases.republic.x - bs / 2, bases.republic.y - bs / 2, bs, bs, bases.republic.color, bases.republic.name);
 
-            drawBuilding(
-                outposts.republic.x - buildingSize / 2,
-                outposts.republic.y - buildingSize / 2,
-                buildingSize,
-                buildingSize,
-                outposts.republic.color,
-                outposts.republic.name
-            );
-
-            // Рисуем точку захвата
+            // Точка захвата
             drawCapturePoint();
 
+            // Юниты
+            for (const u of units) u.draw();
+
+            // Пули
+            for (const b of bullets) drawBullet(b);
+
+            // Частицы
+            for (const p of particles) {
+                ctx.globalAlpha = p.life / 35;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
             ctx.restore();
-
-            // Обновляем пульсацию
-            capturePoint.pulsePhase += 0.05;
-
-            // Обновляем отображение зума
-            zoomDisplay.textContent = Math.round(zoom * 100) + '%';
         }
 
-        function getDistance(touch1, touch2) {
-            return Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+        // ==================== ГЛАВНЫЙ ЦИКЛ ====================
+        function update() {
+            for (const u of units) u.update();
+            updateBullets();
+            updateParticles();
+            capturePoint.pulsePhase += 0.05;
+        }
+
+        function updateUI() {
+            const repAlive = units.filter(u => u.side === 'republic' && u.alive).length;
+            const cisAlive = units.filter(u => u.side === 'cis' && u.alive).length;
+            document.getElementById('repCount').textContent = repAlive;
+            document.getElementById('cisCount').textContent = cisAlive;
+            document.getElementById('zoomLevel').textContent = Math.round(zoom * 100) + '%';
+        }
+
+        function loop() {
+            update();
+            drawMap();
+            updateUI();
+            requestAnimationFrame(loop);
+        }
+
+        // ==================== УПРАВЛЕНИЕ КАМЕРОЙ ====================
+        let isDragging = false;
+        let lastX = 0, lastY = 0;
+        let initialPinchDistance = 0, initialZoom = 1;
+
+        function getDistance(t1, t2) {
+            return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
         }
 
         canvas.addEventListener('touchstart', (e) => {
@@ -223,32 +622,21 @@
 
         canvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
-
             if (e.touches.length === 1 && isDragging) {
-                const currentX = e.touches[0].clientX;
-                const currentY = e.touches[0].clientY;
-                
-                cameraX -= (currentX - lastX) / zoom;
-                cameraY -= (currentY - lastY) / zoom;
-                
-                lastX = currentX;
-                lastY = currentY;
-                
-                drawMap();
+                const cx = e.touches[0].clientX;
+                const cy = e.touches[0].clientY;
+                cameraX -= (cx - lastX) / zoom;
+                cameraY -= (cy - lastY) / zoom;
+                lastX = cx;
+                lastY = cy;
             } else if (e.touches.length === 2) {
-                const currentDistance = getDistance(e.touches[0], e.touches[1]);
-                const scale = currentDistance / initialPinchDistance;
-                
-                zoom = Math.max(0.3, Math.min(3, initialZoom * scale));
-                
-                drawMap();
+                const d = getDistance(e.touches[0], e.touches[1]);
+                zoom = Math.max(0.3, Math.min(3, initialZoom * (d / initialPinchDistance)));
             }
         });
 
         canvas.addEventListener('touchend', (e) => {
-            if (e.touches.length < 2) {
-                isDragging = false;
-            }
+            if (e.touches.length < 2) isDragging = false;
         });
 
         canvas.addEventListener('mousedown', (e) => {
@@ -256,50 +644,31 @@
             lastX = e.clientX;
             lastY = e.clientY;
         });
-
         canvas.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
-            
             cameraX -= (e.clientX - lastX) / zoom;
             cameraY -= (e.clientY - lastY) / zoom;
-            
             lastX = e.clientX;
             lastY = e.clientY;
-            
-            drawMap();
         });
-
-        canvas.addEventListener('mouseup', () => {
-            isDragging = false;
-        });
-
-        canvas.addEventListener('mouseleave', () => {
-            isDragging = false;
-        });
+        canvas.addEventListener('mouseup', () => isDragging = false);
+        canvas.addEventListener('mouseleave', () => isDragging = false);
 
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const zoomSpeed = 0.1;
-            
-            if (e.deltaY < 0) {
-                zoom = Math.min(3, zoom + zoomSpeed);
-            } else {
-                zoom = Math.max(0.3, zoom - zoomSpeed);
-            }
-            
-            drawMap();
+            if (e.deltaY < 0) zoom = Math.min(3, zoom + 0.1);
+            else zoom = Math.max(0.3, zoom - 0.1);
         });
 
+        // ==================== ЗАПУСК ====================
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
         window.addEventListener('resize', resize);
         resize();
-        
-        // Анимация пульсации
-        function animate() {
-            drawMap();
-            requestAnimationFrame(animate);
-        }
-        animate();
-
+        createArmies();
+        loop();
     </script>
 </body>
 </html>
