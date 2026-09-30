@@ -1,0 +1,33 @@
+body {
+    margin: 0;
+    padding: 0;
+    background: #1a2332;
+    overflow: hidden;
+    touch-action: none;
+}
+
+canvas {
+    display: block;
+}
+
+#ui {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    color: white;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px 14px;
+    border-radius: 6px;
+    pointer-events: none;
+    line-height: 1.6;
+}
+
+#ui .rep {
+    color: #ff6666;
+}
+
+#ui .cis {
+    color: #66aaff;
+}
