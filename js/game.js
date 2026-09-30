@@ -16,13 +16,12 @@ class Squad {
         this.commander = null;
         this.isOriginalCommanderAlive = true;
         this.state = 'FORMING';
+        this.isFullyFormed = false; // Новый флаг: все ли на местах
         
         this.slots = [];
         let slotId = 0;
-        // Создаём слоты: сначала передние ряды (row=0), потом задние (row=3)
         for (let r = 0; r < SQUAD_CONFIG.rows; r++) {
             for (let c = 0; c < SQUAD_CONFIG.cols; c++) {
-                // Смещение: командир в центре последнего ряда = (0, 0)
                 const offsetX = (c - SQUAD_CONFIG.commanderCol) * SQUAD_CONFIG.colSpacing;
                 const offsetY = (r - SQUAD_CONFIG.commanderRow) * SQUAD_CONFIG.rowSpacing;
                 const isCommanderSlot = (r === SQUAD_CONFIG.commanderRow && c === SQUAD_CONFIG.commanderCol);
@@ -36,7 +35,6 @@ class Squad {
         droid.squad = this;
         droid.slotIndex = slotIndex;
         
-        // Если это командирский слот и командира ещё нет
         if (this.slots[slotIndex].isCommanderSlot && !this.commander) {
             this.commander = droid;
             droid.isCommander = true;
@@ -48,12 +46,12 @@ class Squad {
 
     removeMember(droid) {
         this.members = this.members.filter(m => m !== droid);
+        this.isFullyFormed = false; // Сброс при потере юнита
         
         if (droid === this.commander) {
             this.isOriginalCommanderAlive = false;
             
             if (this.members.length > 0) {
-                // Выбираем случайного выжившего преемником (обычный дроид, без бонусов)
                 const successor = this.members[Math.floor(Math.random() * this.members.length)];
                 successor.isCommander = true;
                 successor.isOriginalCommander = false;
@@ -73,11 +71,34 @@ class Squad {
         return this.getFillPercentage() >= threshold;
     }
 
+    // Проверка: все ли дроиды на своих местах
+    checkFormationComplete() {
+        if (this.members.length < SQUAD_CONFIG.maxSize) return false;
+        
+        const tolerance = this.isOriginalCommanderAlive ? SQUAD_CONFIG.formationToleranceOriginal : SQUAD_CONFIG.formationToleranceSuccessor;
+        
+        for (const droid of this.members) {
+            const slot = this.slots[droid.slotIndex];
+            const targetX = this.commander.x + slot.x;
+            const targetY = this.commander.y + slot.y;
+            const dist = Math.hypot(targetX - droid.x, targetY - droid.y);
+            
+            if (dist > tolerance) return false;
+        }
+        return true;
+    }
+
     update() {
         if (!this.commander) return;
 
-        if (this.state === 'FORMING' && this.shouldAttack()) {
-            this.state = 'MARCHING';
+        // Проверяем, все ли на местах
+        if (this.state === 'FORMING') {
+            if (this.shouldAttack()) {
+                if (this.checkFormationComplete()) {
+                    this.isFullyFormed = true;
+                    this.state = 'MARCHING';
+                }
+            }
         }
 
         const enemy = this.commander.findNearestEnemy();
@@ -100,7 +121,6 @@ class Squad {
         const dy = targetY - this.commander.y;
         const dist = Math.hypot(dx, dy);
 
-        // Командир двигается медленнее (× 0.8), чтобы отряд успевал
         if (dist > 10) {
             this.commander.x += (dx / dist) * this.commander.speed * 0.8;
             this.commander.y += (dy / dist) * this.commander.speed * 0.8;
@@ -324,13 +344,14 @@ class Droid extends Unit {
 
     updateDroidBehavior(enemy, dist) {
         if (!this.squad || !this.squad.commander) {
+            // Если отряд уничтожен - идём к точке захвата
             this.moveToTarget(capturePoint.x, capturePoint.y);
             return;
         }
 
-        const tolerance = this.squad.isOriginalCommanderAlive ? SQUAD_CONFIG.formationToleranceOriginal : SQUAD_CONFIG.formationToleranceSuccessor;
         const slot = this.squad.slots[this.slotIndex];
         
+        // Целевая позиция = позиция командира + смещение слота
         const targetX = this.squad.commander.x + slot.x;
         const targetY = this.squad.commander.y + slot.y;
 
@@ -338,22 +359,16 @@ class Droid extends Unit {
         const dy = targetY - this.y;
         const distToSlot = Math.hypot(dx, dy);
 
-        // Плавное выравнивание: быстрее когда далеко, медленнее когда близко
-        let moveSpeed = this.speed;
-        if (distToSlot > tolerance * 2) {
-            moveSpeed = this.speed * 1.3; // Ускорение
-        } else if (distToSlot < tolerance * 0.5) {
-            moveSpeed = this.speed * 0.5; // Замедление
-        }
-
-        if (distToSlot > tolerance) {
+        // ВСЕГДА двигаемся к своей позиции в строю (даже в бою)
+        if (distToSlot > 5) {
+            let moveSpeed = this.speed;
+            if (distToSlot > SQUAD_CONFIG.formationToleranceOriginal * 2) {
+                moveSpeed = this.speed * 1.3;
+            } else if (distToSlot < SQUAD_CONFIG.formationToleranceOriginal * 0.5) {
+                moveSpeed = this.speed * 0.5;
+            }
             this.x += (dx / distToSlot) * moveSpeed;
             this.y += (dy / distToSlot) * moveSpeed;
-        } else {
-            if (this.squad.state === 'ENGAGING' && enemy && dist < this.fireRange) {
-                this.x += (Math.random() - 0.5) * 0.5;
-                this.y += (Math.random() - 0.5) * 0.5;
-            }
         }
     }
 
@@ -367,7 +382,6 @@ class Droid extends Unit {
 class CommanderDroid extends Droid {
     constructor(config, x, y) {
         super(config, x, y);
-        // Бонусы уже в config (HP=2, accuracy=0.6, detectRange=250)
     }
 }
 
@@ -383,15 +397,12 @@ function handleRespawn(unit) {
     unit.isOriginalCommander = false;
 
     if (unit.side === 'cis') {
-        // Ищем отряд в стадии формирования
         let formingSquad = squads.find(s => s.state === 'FORMING' && s.members.length < SQUAD_CONFIG.maxSize);
         
         if (formingSquad) {
-            // Находим свободный слот (заполняем сначала передние ряды)
             const occupiedSlots = formingSquad.members.map(m => m.slotIndex);
             let freeSlot = -1;
             
-            // Ищем слот по порядку: row 0, потом row 1, 2, 3
             for (let i = 0; i < formingSquad.slots.length; i++) {
                 if (!occupiedSlots.includes(i)) {
                     freeSlot = i;
@@ -407,7 +418,6 @@ function handleRespawn(unit) {
                 createNewSquadForDroid(unit, base);
             }
         } else {
-            // Нет формирующихся отрядов - создаём нового командира
             createNewSquadForDroid(unit, base);
         }
     } else {
@@ -423,7 +433,6 @@ function createNewSquadForDroid(droid, base) {
     droid.x = base.x;
     droid.y = base.y;
     
-    // Находим слот командира
     const commanderSlotIndex = newSquad.slots.findIndex(s => s.isCommanderSlot);
     newSquad.addMember(droid, commanderSlotIndex);
 }
@@ -433,7 +442,6 @@ function createArmies() {
     units = [];
     squads = [];
 
-    // Республика: 9 клонов
     const repBase = bases.republic;
     for (let i = 0; i < 9; i++) {
         const angle = (i / 9) * Math.PI * 2;
@@ -442,20 +450,17 @@ function createArmies() {
         units.push(unit);
     }
 
-    // КНС: Создаём первый отряд с командиром
     const cisBase = bases.cis;
     const firstSquad = new Squad(cisBase.x, cisBase.y, 1);
     squads.push(firstSquad);
 
-    // Сначала создаём командира
     const commanderSlotIndex = firstSquad.slots.findIndex(s => s.isCommanderSlot);
     const commander = new CommanderDroid(COMMANDER_DROID_CONFIG, cisBase.x, cisBase.y);
     firstSquad.addMember(commander, commanderSlotIndex);
     units.push(commander);
 
-    // Затем заполняем остальные слоты (сначала передние ряды)
     for (let i = 0; i < SQUAD_CONFIG.maxSize; i++) {
-        if (i === commanderSlotIndex) continue; // Пропускаем слот командира
+        if (i === commanderSlotIndex) continue;
         const slot = firstSquad.slots[i];
         const x = cisBase.x + slot.x + (Math.random()-0.5)*10;
         const y = cisBase.y + slot.y + (Math.random()-0.5)*10;
