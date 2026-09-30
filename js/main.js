@@ -10,7 +10,6 @@ let isDragging = false;
 let lastX = 0, lastY = 0;
 let initialPinchDistance = 0, initialZoom = 1;
 
-// ==================== РАЗМЕР ЭКРАНА ====================
 function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -72,14 +71,12 @@ function drawCapturePoint() {
 function drawUnit(u) {
     if (!u.alive) return;
 
-    // Тень
     ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.beginPath();
     ctx.ellipse(u.x, u.y + u.radius, u.radius, u.radius * 0.4, 0, 0, Math.PI * 2);
     ctx.fill();
 
     if (u.shape === 'circle') {
-        // Клон — белый кружок
         ctx.fillStyle = u.color;
         ctx.strokeStyle = '#cccccc';
         ctx.lineWidth = 1.5;
@@ -88,23 +85,23 @@ function drawUnit(u) {
         ctx.fill();
         ctx.stroke();
 
-        // Красный крест для медика
         if (u.isMedic) {
             ctx.fillStyle = '#ff0000';
             ctx.fillRect(u.x - 2, u.y - 5, 4, 10);
             ctx.fillRect(u.x - 5, u.y - 2, 10, 4);
         }
     } else {
-        // Дроид — овал
         ctx.fillStyle = u.color;
         
-        // Жёлтая обводка для ЛЮБОГО командира (оригинального или преемника)
-        if (u.isCommander) {
+        // Оригинальный командир: жёлтая обводка + свечение
+        if (u.isOriginalCommander) {
             ctx.strokeStyle = SQUAD_CONFIG.commanderOutline;
             ctx.lineWidth = 2;
             ctx.shadowBlur = 6;
             ctx.shadowColor = SQUAD_CONFIG.commanderOutline;
-        } else {
+        } 
+        // Преемник: обычная обводка, без свечения (или можно сделать очень тусклое)
+        else {
             ctx.strokeStyle = '#8b7355';
             ctx.lineWidth = 1.5;
             ctx.shadowBlur = 0;
@@ -114,39 +111,28 @@ function drawUnit(u) {
         ctx.ellipse(u.x, u.y, u.radius * 0.7, u.radius * 1.4, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        ctx.shadowBlur = 0; // Сброс свечения
+        ctx.shadowBlur = 0;
 
-        // Жёлтая антенна/знак отличия ТОЛЬКО для оригинального командира
+        // Антенна ТОЛЬКО у оригинального командира
         if (u.isOriginalCommander) {
             ctx.fillStyle = SQUAD_CONFIG.commanderAntenna;
             ctx.beginPath();
             ctx.moveTo(u.x - 3, u.y - u.radius * 1.2);
             ctx.lineTo(u.x + 3, u.y - u.radius * 1.2);
-            ctx.lineTo(u.x, u.y - u.radius * 1.8); // Антенна вверх
+            ctx.lineTo(u.x, u.y - u.radius * 1.8);
             ctx.closePath();
             ctx.fill();
         }
 
-        // Зелёная точка "в строю" (только если отряд не формируется на базе)
-        if (u.squad && u.squad.state !== 'FORMING') {
-            const tolerance = u.squad.isOriginalCommanderAlive 
-                ? SQUAD_CONFIG.formationToleranceOriginal 
-                : SQUAD_CONFIG.formationToleranceSuccessor;
-            
-            const slot = u.squad.slots[u.slotIndex];
-            const idealX = u.squad.commander.x + slot.x;
-            const idealY = u.squad.commander.y + slot.y;
-            
-            if (Math.hypot(idealX - u.x, idealY - u.y) < tolerance) {
-                ctx.fillStyle = '#00ff00';
-                ctx.beginPath();
-                ctx.arc(u.x, u.y - u.radius * 1.4 - 5, 2.5, 0, Math.PI * 2);
-                ctx.fill();
-            }
+        // ЗЕЛЁНАЯ ТОЧКА ТОЛЬКО у текущего командира (оригинального или преемника)
+        if (u.isCommander) {
+            ctx.fillStyle = '#00ff00';
+            ctx.beginPath();
+            ctx.arc(u.x, u.y - u.radius * 1.4 - 6, 3, 0, Math.PI * 2);
+            ctx.fill();
         }
     }
 
-    // Полоска HP (только если ранен)
     if (u.hp < u.maxHp) {
         const bw = 14, bh = 2;
         ctx.fillStyle = '#000';
@@ -161,15 +147,12 @@ function drawBullet(b) {
     const angle = Math.atan2(b.vy, b.vx);
     const length = 14;
     const width = 4;
-
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.rotate(angle);
-
     ctx.fillStyle = b.color;
     ctx.shadowBlur = 8;
     ctx.shadowColor = b.color;
-
     ctx.beginPath();
     ctx.moveTo(length / 2, 0);
     ctx.lineTo(0, width / 2);
@@ -177,7 +160,6 @@ function drawBullet(b) {
     ctx.lineTo(0, -width / 2);
     ctx.closePath();
     ctx.fill();
-
     ctx.shadowBlur = 0;
     ctx.restore();
 }
@@ -185,7 +167,6 @@ function drawBullet(b) {
 function drawGrenade(g) {
     ctx.save();
     ctx.translate(g.x, g.y);
-
     if (g.type === 'emp') {
         ctx.fillStyle = '#00aaff';
         ctx.shadowBlur = 10;
@@ -211,7 +192,6 @@ function drawGrenade(g) {
         ctx.arc(0, 0, 2, 0, Math.PI * 2);
         ctx.fill();
     }
-
     ctx.shadowBlur = 0;
     ctx.restore();
 }
@@ -219,17 +199,14 @@ function drawGrenade(g) {
 function drawExplosion(e) {
     const progress = 1 - (e.life / e.maxLife);
     const currentRadius = e.radius * progress;
-
     ctx.save();
     ctx.translate(e.x, e.y);
-
     if (e.type === 'emp') {
         ctx.strokeStyle = `rgba(${EXPLOSION_CONFIG.emp.color}, ${e.life / e.maxLife})`;
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
         ctx.stroke();
-
         ctx.strokeStyle = `rgba(255, 255, 255, ${e.life / e.maxLife})`;
         ctx.lineWidth = 2;
         for (let i = 0; i < EXPLOSION_CONFIG.emp.lightningCount; i++) {
@@ -243,23 +220,19 @@ function drawExplosion(e) {
     } else {
         const fireRadius = currentRadius * 0.6;
         const smokeRadius = currentRadius;
-
         ctx.fillStyle = `rgba(${EXPLOSION_CONFIG.thermal.smokeColor}, ${e.life / e.maxLife * 0.5})`;
         ctx.beginPath();
         ctx.arc(0, 0, smokeRadius, 0, Math.PI * 2);
         ctx.fill();
-
         ctx.fillStyle = `rgba(${EXPLOSION_CONFIG.thermal.fireColor}, ${e.life / e.maxLife})`;
         ctx.beginPath();
         ctx.arc(0, 0, fireRadius, 0, Math.PI * 2);
         ctx.fill();
-
         ctx.fillStyle = `rgba(${EXPLOSION_CONFIG.thermal.coreColor}, ${e.life / e.maxLife})`;
         ctx.beginPath();
         ctx.arc(0, 0, fireRadius * 0.3, 0, Math.PI * 2);
         ctx.fill();
     }
-
     ctx.restore();
 }
 
@@ -269,37 +242,28 @@ function drawMap() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
-    
-    // Применяем камеру и зум
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.scale(zoom, zoom);
     ctx.translate(-canvas.width / 2, -canvas.height / 2);
     ctx.translate(-cameraX, -cameraY);
 
-    // Карта и границы
     ctx.fillStyle = '#1a2332';
     ctx.fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
     ctx.strokeStyle = '#2a3b4c';
     ctx.lineWidth = 4;
     ctx.strokeRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
 
-    // Базы
     const bs = bases.republic.buildingSize;
     drawBuilding(bases.cis.x - bs / 2, bases.cis.y - bs / 2, bs, bs, bases.cis.color, bases.cis.name);
     drawBuilding(bases.republic.x - bs / 2, bases.republic.y - bs / 2, bs, bs, bases.republic.color, bases.republic.name);
 
-    // Точка захвата
     drawCapturePoint();
 
-    // Юниты
     for (const u of units) drawUnit(u);
-
-    // Эффекты
     for (const b of bullets) drawBullet(b);
     for (const g of grenades) drawGrenade(g);
     for (const e of explosions) drawExplosion(e);
 
-    // Частицы
     for (const p of particles) {
         ctx.globalAlpha = p.life / 35;
         ctx.fillStyle = p.color;
@@ -308,7 +272,6 @@ function drawMap() {
         ctx.fill();
     }
     ctx.globalAlpha = 1;
-
     ctx.restore();
 }
 
@@ -373,19 +336,12 @@ canvas.addEventListener('wheel', (e) => {
 
 // ==================== ГЛАВНЫЙ ЦИКЛ ====================
 function update() {
-    // 1. Сначала обновляем отряды (чтобы командиры сдвинулись первыми)
     for (const s of squads) s.update();
-    
-    // 2. Затем обновляем юнитов (чтобы дроиды выравнивались по новым позициям командиров)
     for (const u of units) u.update();
-    
-    // 3. Обновляем снаряды и эффекты
     updateBullets();
     updateGrenades();
     updateParticles();
     updateExplosions();
-    
-    // 4. Анимация точки захвата
     capturePoint.pulsePhase += 0.05;
 }
 
@@ -404,6 +360,5 @@ function loop() {
     requestAnimationFrame(loop);
 }
 
-// ==================== ЗАПУСК ====================
 createArmies();
 loop();
